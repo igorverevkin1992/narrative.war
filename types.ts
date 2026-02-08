@@ -47,7 +47,6 @@ export interface HistoryItem {
 export interface SystemState {
   currentAgent: AgentType | 'IDLE';
   topic: string;
-  selectedModel: string;
   isProcessing: boolean;
   logs: string[];
   
@@ -67,14 +66,15 @@ export interface SystemState {
   showHistory: boolean;
 }
 
+// NOTE: Import APP_VERSION at usage site to avoid circular deps
+// The initial logs use a static string here; App.tsx uses APP_VERSION for headers.
 export const INITIAL_STATE: SystemState = {
   currentAgent: 'IDLE',
   topic: '',
-  selectedModel: 'gemini-3-pro-preview', // Default to Pro for better Scout/Analyst performance
   isProcessing: false,
   isSteppable: false,
   stepStatus: 'IDLE',
-  logs: ['> MEDIAWAR.CORE V3.3 INITIALIZED...', '> WAITING FOR TARGET VECTOR...'],
+  logs: ['> MEDIAWAR.CORE INITIALIZED...', '> WAITING FOR TARGET VECTOR...'],
   history: [],
   showHistory: false
 };

@@ -1,3 +1,9 @@
+# Environment variables (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+chroma_db/
+
 # Logs
 logs
 *.log

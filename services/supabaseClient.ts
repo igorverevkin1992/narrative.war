@@ -1,39 +1,32 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ScriptBlock, HistoryItem } from '../types';
+import { logger } from './logger';
 
-// Initialize client
-// NOTE: Ideally these should be in process.env, but for this environment we check if they exist
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 
-let supabase: any = null;
+let supabase: SupabaseClient | null = null;
 
 if (supabaseUrl && supabaseKey) {
   supabase = createClient(supabaseUrl, supabaseKey);
 }
 
-export const saveRunToHistory = async (topic: string, model: string, script: ScriptBlock[]) => {
+export const saveRunToHistory = async (topic: string, model: string, script: ScriptBlock[]): Promise<HistoryItem | null> => {
   if (!supabase) {
-    console.warn("Supabase credentials missing. History not saved.");
+    logger.warn("Supabase credentials missing. History not saved.");
     return null;
   }
 
   const { data, error } = await supabase
     .from('mediawar_history')
-    .insert([
-      { 
-        topic, 
-        model, 
-        script 
-      },
-    ])
+    .insert([{ topic, model, script }])
     .select();
 
   if (error) {
-    console.error('Error saving history:', error);
+    logger.error('Error saving history', error);
     return null;
   }
-  return data?.[0];
+  return (data?.[0] as HistoryItem) ?? null;
 };
 
 export const fetchHistory = async (): Promise<HistoryItem[]> => {
@@ -47,10 +40,10 @@ export const fetchHistory = async (): Promise<HistoryItem[]> => {
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Error fetching history:', error);
+    logger.error('Error fetching history', error);
     return [];
   }
-  return data as HistoryItem[];
+  return (data as HistoryItem[]) ?? [];
 };
 
 export const deleteHistoryItem = async (id: number): Promise<boolean> => {
@@ -62,7 +55,7 @@ export const deleteHistoryItem = async (id: number): Promise<boolean> => {
     .eq('id', id);
 
   if (error) {
-    console.error('Error deleting history item:', error);
+    logger.error('Error deleting history item', error);
     return false;
   }
   return true;

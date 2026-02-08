@@ -1,9 +1,10 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { AgentType, SystemState, INITIAL_STATE, ResearchDossier, ScriptBlock, HistoryItem, TopicSuggestion } from './types';
+import React, { useState, useCallback, useEffect, useReducer, useRef } from 'react';
+import { AgentType, SystemState, INITIAL_STATE, ResearchDossier, HistoryItem, TopicSuggestion } from './types';
 import { runRadarAgent, runAnalystAgent, runArchitectAgent, runWriterAgent, generateImageForBlock, runScoutAgent } from './services/geminiService';
 import { saveRunToHistory, fetchHistory, deleteHistoryItem } from './services/supabaseClient';
-import { AVAILABLE_MODELS } from './constants';
+import { APP_VERSION, MAX_LOG_ENTRIES, AGENT_MODELS } from './constants';
+import { logger } from './services/logger';
 import AgentLog from './components/AgentLog';
 import ScriptDisplay from './components/ScriptDisplay';
 import HistorySidebar from './components/HistorySidebar';
@@ -16,10 +17,42 @@ const AnalystIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" hei
 const ArchitectIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>;
 const WriterIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>;
 
+// --- STATE REDUCER ---
+
+type Action =
+  | { type: 'SET_FIELD'; field: keyof SystemState; value: SystemState[keyof SystemState] }
+  | { type: 'ADD_LOG'; message: string }
+  | { type: 'MERGE'; partial: Partial<SystemState> }
+  | { type: 'UPDATE_SCRIPT_IMAGE'; index: number; imageUrl: string }
+  | { type: 'SET_HISTORY'; history: HistoryItem[] };
+
+function stateReducer(state: SystemState, action: Action): SystemState {
+  switch (action.type) {
+    case 'SET_FIELD':
+      return { ...state, [action.field]: action.value };
+    case 'ADD_LOG': {
+      const logs = [...state.logs, action.message];
+      return { ...state, logs: logs.length > MAX_LOG_ENTRIES ? logs.slice(-MAX_LOG_ENTRIES) : logs };
+    }
+    case 'MERGE':
+      return { ...state, ...action.partial };
+    case 'UPDATE_SCRIPT_IMAGE': {
+      if (!state.finalScript) return state;
+      const newScript = [...state.finalScript];
+      newScript[action.index] = { ...newScript[action.index], imageUrl: action.imageUrl };
+      return { ...state, finalScript: newScript };
+    }
+    case 'SET_HISTORY':
+      return { ...state, history: action.history };
+    default:
+      return state;
+  }
+}
+
 // Helper to formatting Dossier Object to String
 const formatDossierToString = (d: ResearchDossier): string => {
   let output = `TOPIC: ${d.topic}\n\n`;
-  
+
   output += `/// WESTERN MEDIA NARRATIVES\n`;
   d.claims.forEach(c => output += `- ${c}\n`);
   output += `\n`;
@@ -39,179 +72,228 @@ const formatDossierToString = (d: ResearchDossier): string => {
 };
 
 function App() {
-  const [state, setState] = useState<SystemState>(INITIAL_STATE);
+  const [state, dispatch] = useReducer(stateReducer, INITIAL_STATE);
   const [editedRadar, setEditedRadar] = useState('');
   const [editedDossier, setEditedDossier] = useState('');
   const [editedStructure, setEditedStructure] = useState('');
 
-  // Load History on Mount
-  useEffect(() => {
-    const loadData = async () => {
-      const history = await fetchHistory();
-      setState(prev => ({ ...prev, history }));
-    };
-    loadData();
-  }, []);
+  // Ref for the latest state to avoid stale closures in async chains
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // AbortController ref for cancelling in-flight agent operations
+  const abortRef = useRef<AbortController | null>(null);
 
   const addLog = useCallback((msg: string) => {
-    setState(prev => ({ ...prev, logs: [...prev.logs, msg] }));
+    dispatch({ type: 'ADD_LOG', message: msg });
   }, []);
+
+  // Load History on Mount with error handling (#23)
+  useEffect(() => {
+    let cancelled = false;
+    const loadData = async () => {
+      try {
+        const history = await fetchHistory();
+        if (!cancelled) {
+          dispatch({ type: 'SET_HISTORY', history });
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error('Failed to load history', message);
+        if (!cancelled) {
+          addLog(`ERROR: Could not load history: ${message}`);
+        }
+      }
+    };
+    loadData();
+    return () => { cancelled = true; };
+  }, [addLog]);
 
   // --- EXECUTION FUNCTIONS ---
 
+  const cancelCurrentOperation = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+  }, []);
+
   const executeScout = async () => {
-    setState(prev => ({ ...prev, isProcessing: true, stepStatus: 'PROCESSING', currentAgent: AgentType.SCOUT, scoutSuggestions: undefined }));
+    cancelCurrentOperation();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    dispatch({ type: 'MERGE', partial: { isProcessing: true, stepStatus: 'PROCESSING', currentAgent: AgentType.SCOUT, scoutSuggestions: undefined } });
     addLog(`>>> ACTIVATING AGENT S: THE SCOUT (Google Search)...`);
-    
+
     try {
-      // Force Pro model inside the service, so state.selectedModel only applies to later steps if needed
-      const suggestions = await runScoutAgent(state.selectedModel);
+      const suggestions = await runScoutAgent();
+      if (controller.signal.aborted) return;
+
       addLog(`>>> SCOUT REPORT: ${suggestions.length} TARGETS IDENTIFIED.`);
-      
-      setState(prev => ({ 
-        ...prev, 
-        scoutSuggestions: suggestions,
-        isProcessing: false, // Stop processing so user can select
-        stepStatus: 'IDLE' 
-      }));
-    } catch (e: any) {
-      addLog(`ERROR: ${e.message}`);
-      setState(prev => ({ ...prev, isProcessing: false, stepStatus: 'IDLE' }));
+      dispatch({ type: 'MERGE', partial: { scoutSuggestions: suggestions, isProcessing: false, stepStatus: 'IDLE' } });
+    } catch (e: unknown) {
+      if (controller.signal.aborted) return;
+      const message = e instanceof Error ? e.message : String(e);
+      addLog(`ERROR: ${message}`);
+      dispatch({ type: 'MERGE', partial: { isProcessing: false, stepStatus: 'IDLE' } });
     }
   };
 
   const handleSelectTopic = (suggestion: TopicSuggestion) => {
     addLog(`>>> TARGET CONFIRMED: ${suggestion.title}`);
-    setState(prev => ({ ...prev, topic: suggestion.title, currentAgent: 'IDLE' }));
-    // Automatically trigger Radar after selection? Or let user click Init?
-    // Let's set the topic and let the user review/click Init for control, or strictly follow "moving to others"
-    // The prompt implied "after which I select one and move on". 
-    // We will set the topic and immediately execute Radar.
-    setTimeout(() => {
-        executeRadar(suggestion.title);
-    }, 100);
+    dispatch({ type: 'MERGE', partial: { topic: suggestion.title, currentAgent: 'IDLE' } });
+    executeRadar(suggestion.title);
   };
 
   const executeRadar = async (overrideTopic?: string) => {
-    const activeTopic = overrideTopic || state.topic;
+    const activeTopic = overrideTopic || stateRef.current.topic;
 
     if (!activeTopic.trim()) {
       addLog("ERROR: No Target Vector.");
       return;
     }
-    setState(prev => ({ ...prev, topic: activeTopic, isProcessing: true, stepStatus: 'PROCESSING', currentAgent: AgentType.RADAR }));
+
+    cancelCurrentOperation();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    dispatch({ type: 'MERGE', partial: { topic: activeTopic, isProcessing: true, stepStatus: 'PROCESSING', currentAgent: AgentType.RADAR } });
     addLog(`>>> ACTIVATING AGENT A: THE RADAR...`);
-    
+
     try {
-      const radarOutput = await runRadarAgent(activeTopic, state.selectedModel);
+      const radarOutput = await runRadarAgent(activeTopic);
+      if (controller.signal.aborted) return;
+
       addLog(">>> RADAR SCAN COMPLETE.");
-      
-      setState(prev => ({ 
-        ...prev, 
-        radarOutput, 
-        isProcessing: !prev.isSteppable, 
-        stepStatus: prev.isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING' 
-      }));
+
+      const isSteppable = stateRef.current.isSteppable;
+      dispatch({ type: 'MERGE', partial: {
+        radarOutput,
+        isProcessing: !isSteppable,
+        stepStatus: isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING'
+      }});
       setEditedRadar(radarOutput);
 
-      if (!state.isSteppable) executeAnalyst(radarOutput);
-    } catch (e: any) {
-      addLog(`ERROR: ${e.message}`);
-      setState(prev => ({ ...prev, isProcessing: false, stepStatus: 'IDLE' }));
+      if (!isSteppable) executeAnalyst(radarOutput);
+    } catch (e: unknown) {
+      if (controller.signal.aborted) return;
+      const message = e instanceof Error ? e.message : String(e);
+      addLog(`ERROR: ${message}`);
+      dispatch({ type: 'MERGE', partial: { isProcessing: false, stepStatus: 'IDLE' } });
     }
   };
 
   const executeAnalyst = async (inputRadar: string) => {
-    setState(prev => ({ 
-      ...prev, 
+    cancelCurrentOperation();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    dispatch({ type: 'MERGE', partial: {
       radarOutput: inputRadar,
-      currentAgent: AgentType.ANALYST, 
-      isProcessing: true, 
-      stepStatus: 'PROCESSING' 
-    }));
+      currentAgent: AgentType.ANALYST,
+      isProcessing: true,
+      stepStatus: 'PROCESSING'
+    }});
     addLog(">>> ACTIVATING AGENT B: THE ANALYST (Google Grounding)...");
-    
+
     try {
-      const dossier = await runAnalystAgent(state.topic, inputRadar, state.selectedModel);
+      const dossier = await runAnalystAgent(stateRef.current.topic, inputRadar);
+      if (controller.signal.aborted) return;
+
       addLog(">>> DOSSIER COMPILED.");
-      
-      // Convert JSON Object to Human Readable String immediately for editing/display
       const readableDossier = formatDossierToString(dossier);
 
-      setState(prev => ({ 
-        ...prev, 
-        researchDossier: readableDossier, // Store as string for uniformity in UI if needed, but here we store string for simple passing
-        isProcessing: !prev.isSteppable, 
-        stepStatus: prev.isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING' 
-      }));
+      const isSteppable = stateRef.current.isSteppable;
+      dispatch({ type: 'MERGE', partial: {
+        researchDossier: readableDossier,
+        isProcessing: !isSteppable,
+        stepStatus: isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING'
+      }});
       setEditedDossier(readableDossier);
 
-      if (!state.isSteppable) executeArchitect(readableDossier);
-    } catch (e: any) {
-      addLog(`ERROR: ${e.message}`);
-      setState(prev => ({ ...prev, isProcessing: false, stepStatus: 'IDLE' }));
+      if (!isSteppable) executeArchitect(readableDossier);
+    } catch (e: unknown) {
+      if (controller.signal.aborted) return;
+      const message = e instanceof Error ? e.message : String(e);
+      addLog(`ERROR: ${message}`);
+      dispatch({ type: 'MERGE', partial: { isProcessing: false, stepStatus: 'IDLE' } });
     }
   };
 
   const executeArchitect = async (inputDossier: ResearchDossier | string) => {
-    setState(prev => ({ 
-      ...prev, 
+    cancelCurrentOperation();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    dispatch({ type: 'MERGE', partial: {
       researchDossier: inputDossier,
-      currentAgent: AgentType.ARCHITECT, 
-      isProcessing: true, 
-      stepStatus: 'PROCESSING' 
-    }));
+      currentAgent: AgentType.ARCHITECT,
+      isProcessing: true,
+      stepStatus: 'PROCESSING'
+    }});
     addLog(">>> ACTIVATING AGENT C: THE ARCHITECT...");
-    
+
     try {
-      const structure = await runArchitectAgent(inputDossier, state.selectedModel);
+      const structure = await runArchitectAgent(inputDossier);
+      if (controller.signal.aborted) return;
+
       addLog(">>> STRUCTURE LOCKED.");
-      
-      setState(prev => ({ 
-        ...prev, 
-        structureMap: structure, 
-        isProcessing: !prev.isSteppable, 
-        stepStatus: prev.isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING' 
-      }));
+
+      const isSteppable = stateRef.current.isSteppable;
+      dispatch({ type: 'MERGE', partial: {
+        structureMap: structure,
+        isProcessing: !isSteppable,
+        stepStatus: isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING'
+      }});
       setEditedStructure(structure);
 
-      if (!state.isSteppable) executeWriter(structure, inputDossier);
-    } catch (e: any) {
-      addLog(`ERROR: ${e.message}`);
-      setState(prev => ({ ...prev, isProcessing: false, stepStatus: 'IDLE' }));
+      if (!isSteppable) executeWriter(structure, inputDossier);
+    } catch (e: unknown) {
+      if (controller.signal.aborted) return;
+      const message = e instanceof Error ? e.message : String(e);
+      addLog(`ERROR: ${message}`);
+      dispatch({ type: 'MERGE', partial: { isProcessing: false, stepStatus: 'IDLE' } });
     }
   };
 
   const executeWriter = async (inputStructure: string, inputDossier: ResearchDossier | string) => {
-    setState(prev => ({ 
-      ...prev, 
-      structureMap: inputStructure,
-      currentAgent: AgentType.WRITER, 
-      isProcessing: true, 
-      stepStatus: 'PROCESSING' 
-    }));
-    addLog(">>> ACTIVATING AGENT D: THE WRITER...");
-    
-    try {
-      const script = await runWriterAgent(inputStructure, inputDossier, state.selectedModel);
-      addLog(">>> SCRIPT GENERATED.");
-      
-      // Save
-      const savedEntry = await saveRunToHistory(state.topic, state.selectedModel, script);
-      const newHistory = savedEntry ? [savedEntry, ...state.history] : state.history;
+    cancelCurrentOperation();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-      setState(prev => ({ 
-        ...prev, 
-        currentAgent: AgentType.COMPLETED, 
+    dispatch({ type: 'MERGE', partial: {
+      structureMap: inputStructure,
+      currentAgent: AgentType.WRITER,
+      isProcessing: true,
+      stepStatus: 'PROCESSING'
+    }});
+    addLog(">>> ACTIVATING AGENT D: THE WRITER...");
+
+    try {
+      const script = await runWriterAgent(inputStructure, inputDossier);
+      if (controller.signal.aborted) return;
+
+      addLog(">>> SCRIPT GENERATED.");
+
+      const savedEntry = await saveRunToHistory(stateRef.current.topic, AGENT_MODELS.WRITER, script);
+      if (controller.signal.aborted) return;
+
+      const newHistory = savedEntry ? [savedEntry, ...stateRef.current.history] : stateRef.current.history;
+
+      dispatch({ type: 'MERGE', partial: {
+        currentAgent: AgentType.COMPLETED,
         finalScript: script,
-        isProcessing: false, 
+        isProcessing: false,
         stepStatus: 'IDLE',
         history: newHistory
-      }));
+      }});
       addLog(">>> SYSTEM STANDBY.");
-    } catch (e: any) {
-      addLog(`ERROR: ${e.message}`);
-      setState(prev => ({ ...prev, isProcessing: false, stepStatus: 'IDLE' }));
+    } catch (e: unknown) {
+      if (controller.signal.aborted) return;
+      const message = e instanceof Error ? e.message : String(e);
+      addLog(`ERROR: ${message}`);
+      dispatch({ type: 'MERGE', partial: { isProcessing: false, stepStatus: 'IDLE' } });
     }
   };
 
@@ -222,7 +304,6 @@ function App() {
   };
 
   const handleApproveAnalyst = () => {
-    // Pass the string directly. The Architect Agent now accepts text input.
     executeArchitect(editedDossier);
   };
 
@@ -234,33 +315,15 @@ function App() {
 
   const handleImageGen = async (index: number) => {
     if (!state.finalScript) return;
-    
-    // Grab prompt before async op to avoid closure staleness issues, 
-    // though the prompt itself shouldn't change.
+
     const blockPrompt = state.finalScript[index].visualCue;
-    
     addLog(`>>> GENERATING IMAGE FOR BLOCK ${index}...`);
-    
-    // Perform generation first
+
     const imageUrl = await generateImageForBlock(blockPrompt);
-    
+
     if (imageUrl) {
-      // Use atomic functional state update for both the image data and the log.
-      // This prevents race conditions where separate setState calls might cause one update to overwrite another's base state
-      // if not batched correctly, or if `prev` isn't what we expect.
-      setState(prev => {
-        if (!prev.finalScript) return prev;
-        
-        // Create shallow copy of array, but new reference for the specific item
-        const newScript = [...prev.finalScript];
-        newScript[index] = { ...newScript[index], imageUrl };
-        
-        return {
-          ...prev,
-          finalScript: newScript,
-          logs: [...prev.logs, `>>> IMAGE GENERATED FOR BLOCK ${index}.`]
-        };
-      });
+      dispatch({ type: 'UPDATE_SCRIPT_IMAGE', index, imageUrl });
+      addLog(`>>> IMAGE GENERATED FOR BLOCK ${index}.`);
     } else {
       addLog(`>>> FAILED TO GENERATE IMAGE FOR BLOCK ${index}.`);
     }
@@ -269,8 +332,7 @@ function App() {
   // --- HISTORY & UI HELPERS ---
 
   const loadFromHistory = (item: HistoryItem) => {
-    setState(prev => ({
-      ...prev,
+    dispatch({ type: 'MERGE', partial: {
       topic: item.topic,
       finalScript: item.script,
       currentAgent: AgentType.COMPLETED,
@@ -278,19 +340,19 @@ function App() {
       radarOutput: undefined,
       scoutSuggestions: undefined,
       showHistory: false,
-      logs: [...prev.logs, `>>> LOADED ARCHIVE ID: ${item.id} [${item.topic}]`]
-    }));
+    }});
+    addLog(`>>> LOADED ARCHIVE ID: ${item.id} [${item.topic}]`);
   };
 
   const handleDeleteHistory = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     const previousHistory = state.history;
-    setState(prev => ({ ...prev, history: prev.history.filter(item => item.id !== id) }));
+    dispatch({ type: 'SET_HISTORY', history: state.history.filter(item => item.id !== id) });
     const success = await deleteHistoryItem(id);
     if (success) {
       addLog(`>>> ARCHIVE ID ${id} DELETED PERMANENTLY.`);
     } else {
-      setState(prev => ({ ...prev, history: previousHistory }));
+      dispatch({ type: 'SET_HISTORY', history: previousHistory });
       addLog(`>>> ERROR: COULD NOT DELETE ARCHIVE ID ${id}.`);
     }
   };
@@ -311,12 +373,12 @@ function App() {
           <div className="flex items-center gap-3">
             <div className="w-3 h-3 bg-mw-red rounded-full animate-pulse shadow-[0_0_10px_#dc2626]" />
             <h1 className="text-xl font-bold tracking-widest text-white">
-              MEDIAWAR<span className="text-mw-red">.CORE</span> <span className="text-xs text-mw-slate ml-2 font-mono border border-mw-slate/50 px-1 rounded">V3.3</span>
+              MEDIAWAR<span className="text-mw-red">.CORE</span> <span className="text-xs text-mw-slate ml-2 font-mono border border-mw-slate/50 px-1 rounded">V{APP_VERSION}</span>
             </h1>
           </div>
           <div className="flex items-center gap-4">
-             <button 
-              onClick={() => setState(prev => ({ ...prev, showHistory: true }))}
+             <button
+              onClick={() => dispatch({ type: 'SET_FIELD', field: 'showHistory', value: true })}
               className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-mw-slate hover:text-mw-red transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
@@ -329,38 +391,34 @@ function App() {
         </div>
       </header>
 
-      <HistorySidebar 
-        history={state.history} 
-        isOpen={state.showHistory} 
-        onClose={() => setState(prev => ({ ...prev, showHistory: false }))} 
+      <HistorySidebar
+        history={state.history}
+        isOpen={state.showHistory}
+        onClose={() => dispatch({ type: 'SET_FIELD', field: 'showHistory', value: false })}
         onSelect={loadFromHistory}
         onDelete={handleDeleteHistory}
       />
 
       <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start relative">
-        
+
         {/* Left Column: Controls & Status - Made Sticky */}
         <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-24 h-fit">
-          
+
           <div className="bg-mw-gray/30 p-6 rounded-lg border border-mw-slate/30 backdrop-blur-sm">
             <div className="mb-4">
-              <label className="block text-xs font-bold text-mw-slate uppercase mb-2 tracking-wider">Inference Model</label>
-              <select 
-                value={state.selectedModel}
-                onChange={(e) => setState(prev => ({ ...prev, selectedModel: e.target.value }))}
-                disabled={state.isProcessing || state.stepStatus !== 'IDLE'}
-                className="w-full bg-black border border-mw-slate/50 rounded p-2 text-white text-sm focus:border-mw-red outline-none font-mono"
-              >
-                {AVAILABLE_MODELS.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
-              </select>
+              <label className="block text-xs font-bold text-mw-slate uppercase mb-2 tracking-wider">Agent Models</label>
+              <div className="bg-black border border-mw-slate/50 rounded p-3 font-mono text-[11px] space-y-1">
+                <div className="flex justify-between"><span className="text-mw-slate">Scout / Radar / Architect</span><span className="text-green-400">Flash</span></div>
+                <div className="flex justify-between"><span className="text-mw-slate">Analyst / Writer</span><span className="text-purple-400">Pro</span></div>
+              </div>
             </div>
 
             <label className="block text-xs font-bold text-mw-red uppercase mb-2 tracking-wider">Target Vector (Topic)</label>
             <div className="flex gap-2">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={state.topic}
-                  onChange={(e) => setState(prev => ({ ...prev, topic: e.target.value }))}
+                  onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'topic', value: e.target.value })}
                   placeholder="Manual topic..."
                   className="w-full bg-black border border-mw-slate/50 rounded p-3 text-white focus:border-mw-red focus:ring-1 focus:ring-mw-red outline-none transition-all placeholder:text-mw-slate/50 font-mono"
                   disabled={state.isProcessing || state.stepStatus !== 'IDLE'}
@@ -383,10 +441,10 @@ function App() {
                {/* MANUAL START BUTTON */}
                <button
                   onClick={() => executeRadar()}
-                  disabled={state.isProcessing || !state.topic || state.currentAgent !== 'IDLE' && state.currentAgent !== AgentType.COMPLETED}
+                  disabled={state.isProcessing || !state.topic || (state.currentAgent !== 'IDLE' && state.currentAgent !== AgentType.COMPLETED)}
                   className={`w-full py-3 px-4 rounded font-bold uppercase tracking-widest transition-all ${
                     state.isProcessing || (state.currentAgent !== 'IDLE' && state.currentAgent !== AgentType.COMPLETED)
-                      ? 'bg-mw-slate/20 text-mw-slate cursor-not-allowed' 
+                      ? 'bg-mw-slate/20 text-mw-slate cursor-not-allowed'
                       : 'bg-mw-red hover:bg-red-700 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]'
                   }`}
                 >
@@ -395,8 +453,8 @@ function App() {
             </div>
 
             <div className="mt-4 flex items-center gap-3">
-               <div 
-                 onClick={() => !state.isProcessing && setState(prev => ({ ...prev, isSteppable: !prev.isSteppable }))}
+               <div
+                 onClick={() => !state.isProcessing && dispatch({ type: 'SET_FIELD', field: 'isSteppable', value: !state.isSteppable })}
                  className={`cursor-pointer flex items-center gap-2 px-3 py-2 rounded border transition-all ${state.isSteppable ? 'border-mw-red bg-mw-red/10 text-white' : 'border-mw-slate/50 text-mw-slate'}`}
                >
                  <div className={`w-3 h-3 rounded-full ${state.isSteppable ? 'bg-mw-red' : 'bg-mw-slate'}`} />
@@ -408,13 +466,13 @@ function App() {
 
           <div className="space-y-2">
              <h3 className="text-xs font-bold text-mw-slate uppercase tracking-wider pl-1">Chain of Agents</h3>
-             {Steps.map((step, idx) => {
+             {Steps.map((step) => {
                const isActive = state.currentAgent === step.id;
                const agentOrder = [AgentType.SCOUT, AgentType.RADAR, AgentType.ANALYST, AgentType.ARCHITECT, AgentType.WRITER, AgentType.COMPLETED];
-               const currentIdx = agentOrder.indexOf(state.currentAgent as AgentType);
+               const currentIdx = state.currentAgent === 'IDLE' ? -1 : agentOrder.indexOf(state.currentAgent);
                const thisIdx = agentOrder.indexOf(step.id);
                const isPast = currentIdx > thisIdx;
-               
+
                return (
                  <div key={step.id} className={`flex items-center gap-4 p-4 rounded border transition-all ${isActive ? 'bg-mw-red/10 border-mw-red text-white' : isPast ? 'bg-mw-gray/20 border-mw-slate/30 text-green-500' : 'bg-transparent border-transparent text-mw-slate opacity-50'}`}>
                    <step.icon />
@@ -433,11 +491,11 @@ function App() {
 
         {/* Right Column: Output Visualization */}
         <div className="lg:col-span-8 space-y-6">
-          
+
           {/* Empty State */}
           {!state.currentAgent && !state.finalScript && !state.scoutSuggestions && state.currentAgent === 'IDLE' && (
              <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-mw-slate/20 rounded-lg p-12 text-center opacity-50">
-               <div className="text-6xl mb-4">🌐</div>
+               <div className="text-6xl mb-4">&#x1F310;</div>
                <h2 className="text-2xl font-bold mb-2">Awaiting Directive</h2>
                <p className="max-w-md mx-auto">Click "SCAN GLOBAL INTEL" to brainstorm topics with the Scout Agent, or enter a target manually.</p>
              </div>
@@ -449,7 +507,7 @@ function App() {
                <h4 className="text-mw-red font-mono text-xs mb-4">/// SCOUT_INTEL_REPORT (SELECT ONE)</h4>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  {state.scoutSuggestions.map((suggestion, idx) => (
-                    <div 
+                    <div
                       key={idx}
                       onClick={() => handleSelectTopic(suggestion)}
                       className="bg-black/50 border border-mw-slate/50 p-4 rounded cursor-pointer hover:border-mw-red hover:bg-mw-red/10 transition-all group"
@@ -471,14 +529,14 @@ function App() {
                <h4 className="text-mw-red font-mono text-xs mb-2">/// RADAR_INTERCEPT_DATA</h4>
                {state.stepStatus === 'WAITING_FOR_APPROVAL' && state.currentAgent === AgentType.RADAR ? (
                  <div>
-                   <textarea 
-                      value={editedRadar} 
+                   <textarea
+                      value={editedRadar}
                       onChange={(e) => setEditedRadar(e.target.value)}
                       className="w-full h-48 bg-black border border-mw-red/50 text-gray-300 font-mono text-sm p-4 focus:outline-none"
                    />
                    <div className="mt-4 flex justify-end">
                      <button onClick={handleApproveRadar} className="bg-mw-red text-white px-6 py-2 rounded font-bold uppercase tracking-wider text-xs hover:bg-red-600">
-                       Approve & Run Analyst &rarr;
+                       Approve &amp; Run Analyst &rarr;
                      </button>
                    </div>
                  </div>
@@ -488,25 +546,24 @@ function App() {
             </div>
           )}
 
-          {/* STEP 2: ANALYST OUTPUT (NOW SUPPORTS TEXT DISPLAY) */}
+          {/* STEP 2: ANALYST OUTPUT */}
           {(state.currentAgent === AgentType.ANALYST || state.researchDossier) && state.researchDossier && (
              <div className={`bg-mw-gray/20 p-6 rounded border ${state.currentAgent === AgentType.ANALYST ? 'border-mw-red shadow-[0_0_15px_rgba(220,38,38,0.2)]' : 'border-mw-slate/30'}`}>
                 <h4 className="text-blue-400 font-mono text-xs mb-2">/// ANALYST_DOSSIER (TEXT)</h4>
                 {state.stepStatus === 'WAITING_FOR_APPROVAL' && state.currentAgent === AgentType.ANALYST ? (
                    <div>
-                     <textarea 
-                        value={editedDossier} 
+                     <textarea
+                        value={editedDossier}
                         onChange={(e) => setEditedDossier(e.target.value)}
                         className="w-full h-96 bg-black border border-blue-500/50 text-blue-100 font-mono text-sm p-4 focus:outline-none leading-relaxed"
                      />
                      <div className="mt-4 flex justify-end">
                        <button onClick={handleApproveAnalyst} className="bg-mw-red text-white px-6 py-2 rounded font-bold uppercase tracking-wider text-xs hover:bg-red-600">
-                         Approve & Run Architect &rarr;
+                         Approve &amp; Run Architect &rarr;
                        </button>
                      </div>
                    </div>
                 ) : (
-                   /* Displaying the string version now */
                    <RichTextDisplay content={typeof state.researchDossier === 'string' ? state.researchDossier : formatDossierToString(state.researchDossier)} />
                 )}
              </div>
@@ -518,14 +575,14 @@ function App() {
                 <h4 className="text-green-500 font-mono text-xs mb-2">/// ARCHITECT_BLUEPRINT</h4>
                 {state.stepStatus === 'WAITING_FOR_APPROVAL' && state.currentAgent === AgentType.ARCHITECT ? (
                    <div>
-                     <textarea 
-                        value={editedStructure} 
+                     <textarea
+                        value={editedStructure}
                         onChange={(e) => setEditedStructure(e.target.value)}
                         className="w-full h-96 bg-black border border-green-500/50 text-green-100 font-mono text-sm p-4 focus:outline-none leading-relaxed"
                      />
                      <div className="mt-4 flex justify-end">
                        <button onClick={handleApproveArchitect} className="bg-mw-red text-white px-6 py-2 rounded font-bold uppercase tracking-wider text-xs hover:bg-red-600">
-                         Approve & Run Writer &rarr;
+                         Approve &amp; Run Writer &rarr;
                        </button>
                      </div>
                    </div>
@@ -535,13 +592,13 @@ function App() {
              </div>
           )}
 
-          {state.finalScript && <ScriptDisplay 
-            script={state.finalScript} 
+          {state.finalScript && <ScriptDisplay
+            script={state.finalScript}
             topic={state.topic}
             radarContent={state.radarOutput}
             analystContent={typeof state.researchDossier === 'string' ? state.researchDossier : (state.researchDossier ? formatDossierToString(state.researchDossier) : undefined)}
             architectContent={state.structureMap}
-            onGenerateImage={handleImageGen} 
+            onGenerateImage={handleImageGen}
           />}
         </div>
       </main>

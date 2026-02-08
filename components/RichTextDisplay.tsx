@@ -20,7 +20,7 @@ const RichTextDisplay: React.FC<RichTextDisplayProps> = ({ content, className = 
         if (trimmed.startsWith('///') || trimmed.startsWith('===') || trimmed.startsWith('STEP')) {
           return (
             <h4 key={idx} className="text-mw-red font-bold uppercase tracking-wider mt-4 mb-2 text-xs border-b border-mw-red/20 pb-1">
-              {trimmed.replace(/[\/=]/g, '').trim()}
+              {trimmed.replace(/[/=]/g, '').trim()}
             </h4>
           );
         }

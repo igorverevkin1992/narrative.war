@@ -1,15 +1,24 @@
 
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface AgentLogProps {
   logs: string[];
 }
 
+// Store timestamps as logs arrive, keyed by index
+const timestampCache = new Map<number, string>();
+
+const getTimestamp = (index: number): string => {
+  const existing = timestampCache.get(index);
+  if (existing) return existing;
+  const ts = new Date().toLocaleTimeString();
+  timestampCache.set(index, ts);
+  return ts;
+};
+
 const AgentLog: React.FC<AgentLogProps> = ({ logs }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Use scrollTop instead of scrollIntoView to prevent the main window from scrolling up
-  // when a log is added while the user is at the bottom of the page.
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
@@ -17,7 +26,7 @@ const AgentLog: React.FC<AgentLogProps> = ({ logs }) => {
   }, [logs]);
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="bg-black border border-mw-slate/50 p-4 h-64 overflow-y-auto font-mono text-xs sm:text-sm shadow-inner shadow-black opacity-90"
     >
@@ -27,7 +36,7 @@ const AgentLog: React.FC<AgentLogProps> = ({ logs }) => {
       <div className="flex flex-col space-y-1">
         {logs.map((log, i) => (
           <div key={i} className="text-green-500 break-words">
-            <span className="text-mw-slate mr-2">[{new Date().toLocaleTimeString()}]</span>
+            <span className="text-mw-slate mr-2">[{getTimestamp(i)}]</span>
             {log}
           </div>
         ))}
