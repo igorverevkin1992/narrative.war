@@ -1,0 +1,5 @@
+{
+  "name": "MEDIAWAR.CORE V3.0",
+  "description": "An autonomous AI video production system implementing the 'MediaWar' architecture. Features a Chain of Agents (Radar, Analyst, Architect, Writer) to generate visually-oriented, retention-optimized video scripts based on Global South geopolitical narratives.",
+  "requestFramePermissions": []
+}
