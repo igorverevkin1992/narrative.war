@@ -373,7 +373,7 @@ function App() {
           <div className="flex items-center gap-3">
             <div className="w-3 h-3 bg-mw-red rounded-full animate-pulse shadow-[0_0_10px_#dc2626]" />
             <h1 className="text-xl font-bold tracking-widest text-white">
-              MEDIAWAR<span className="text-mw-red">.CORE</span> <span className="text-xs text-mw-slate ml-2 font-mono border border-mw-slate/50 px-1 rounded">V{APP_VERSION}</span>
+              NARRATIVE<span className="text-mw-red">.WAR</span> <span className="text-xs text-mw-slate ml-2 font-mono border border-mw-slate/50 px-1 rounded">V{APP_VERSION}</span>
             </h1>
           </div>
           <div className="flex items-center gap-4">
