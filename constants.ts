@@ -28,10 +28,7 @@ export const API_RETRY_BASE_DELAY_MS = 1000;
 
 export const AVAILABLE_MODELS = [
   { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash (Fast/High Quota)' },
-  { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro (High Quality)' },
-  { id: 'gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash' },
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash (Stable)' },
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
+  { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro (High Quality)' }
 ];
 
 export const AGENT_SCOUT_PROMPT = `

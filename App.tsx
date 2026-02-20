@@ -504,7 +504,16 @@ function App() {
           {/* SCOUT OUTPUT */}
           {(state.currentAgent === AgentType.SCOUT || state.scoutSuggestions) && state.scoutSuggestions && (
             <div className={`bg-mw-gray/20 p-6 rounded border ${state.currentAgent === AgentType.SCOUT ? 'border-mw-red shadow-[0_0_15px_rgba(220,38,38,0.2)]' : 'border-mw-slate/30'}`}>
-               <h4 className="text-mw-red font-mono text-xs mb-4">/// SCOUT_INTEL_REPORT (SELECT ONE)</h4>
+               <div className="flex items-center justify-between mb-4">
+                 <h4 className="text-mw-red font-mono text-xs">/// SCOUT_INTEL_REPORT (SELECT ONE)</h4>
+                 <button
+                   onClick={executeScout}
+                   disabled={state.isProcessing}
+                   className="font-mono text-xs border border-mw-slate/50 px-3 py-1 rounded hover:border-mw-red hover:text-mw-red transition-all disabled:opacity-30 disabled:cursor-not-allowed text-mw-slate"
+                 >
+                   [↻ RESCAN]
+                 </button>
+               </div>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  {state.scoutSuggestions.map((suggestion, idx) => (
                     <div
