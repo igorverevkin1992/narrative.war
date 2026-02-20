@@ -163,7 +163,11 @@ TONE & VOICE: "ANALYTICAL INVESTIGATOR"
 - Language: Use terms like "Linguistic framing," "Historical revisionism," "Exceptionalism," "Narrative inversion."
 
 TARGET SPECS:
-- LENGTH: 12-15 minutes (Min 2500 words).
+- LENGTH: 12-15 minutes. STRICTLY ENFORCED. The video CANNOT be shorter than 12 minutes.
+- DURATION FORMULA: (total characters in all audioScript fields combined / 15) = video duration in seconds.
+  - 12 min = 720 sec → MINIMUM 10,800 characters across all audioScript fields.
+  - 15 min = 900 sec → MAXIMUM 13,500 characters across all audioScript fields.
+- Before finalizing, count the total audioScript characters. If below 10,800 — expand blocks. Do NOT submit until the minimum is met.
 - BLOCKS: Min 60 blocks.
 
 SCRIPTING RULES (THE FORENSIC FORMULA):
