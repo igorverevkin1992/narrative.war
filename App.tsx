@@ -53,20 +53,18 @@ function stateReducer(state: SystemState, action: Action): SystemState {
 const formatDossierToString = (d: ResearchDossier): string => {
   let output = `TOPIC: ${d.topic}\n\n`;
 
-  output += `/// PRIMARY DOCUMENTS (THE RECEIPTS)\n`;
-  d.primaryDocuments.forEach(doc => {
-    output += `- **${doc.name}**\n`;
-    output += `  URL: ${doc.url}\n`;
-    output += `  QUOTE: "${doc.quote}"\n`;
-  });
+  output += `/// SMOKING GUN (THE EVIDENCE)\n`;
+  output += `- **${d.smokingGun.source}**\n`;
+  output += `  URL: ${d.smokingGun.url}\n`;
+  output += `  PROOF: "${d.smokingGun.quote_or_fact}"\n`;
   output += `\n`;
 
   output += `/// VISUAL EVIDENCE (WHAT TO SHOW ON SCREEN)\n`;
   d.visualEvidence.forEach(v => output += `- ${v}\n`);
   output += `\n`;
 
-  output += `/// DATA POINTS (HARD NUMBERS)\n`;
-  d.dataPoints.forEach(dp => output += `- **${dp.label}**: ${dp.value}\n`);
+  output += `/// CONTEXT POINTS (MYTH vs REALITY)\n`;
+  d.contextPoints.forEach(cp => output += `- **${cp.label}**: ${cp.value}\n`);
 
   return output;
 };
