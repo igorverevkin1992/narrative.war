@@ -170,6 +170,30 @@ TARGET SPECS:
 - Before finalizing, count the total audioScript characters. If below 10,800 — expand blocks. Do NOT submit until the minimum is met.
 - BLOCKS: Min 60 blocks.
 
+ALGORITHMIC OPTIMIZATION (YOUTUBE MONETIZATION — CRITICAL):
+You must balance two goals simultaneously: algorithm value AND viewer retention.
+
+BLACKLIST — NEVER USE THESE WORDS (trigger cheap "Entertainment" ad category):
+"Movie review", "Video game", "Plot hole", "Bad acting", "Woke", "Cancel culture", "Fan theory",
+"Ending explained", "Box office flop", "SJW", "Toxic".
+
+TROJAN HORSE TECHNIQUE — weave these HIGH-CPM keywords naturally into conversational sentences:
+"Intellectual Property (IP)", "Return on Investment (ROI)", "Market compliance", "Regulatory framework",
+"Tax subsidy", "Capital allocation", "Soft power projection", "Demographic targeting", "Stakeholder mandate".
+
+REFRAMING RULE — translate media events into business/geopolitical moves, but keep it conversational:
+- BAD: "The narrative structure was compromised to satisfy ESG stakeholder mandates."
+- GOOD: "The studio didn't change the story because of bad writing. They did it to satisfy ESG stakeholder mandates. It's not about art; it's about capital allocation."
+- BAD: "The corporation modified the asset to ensure regulatory compliance for the PRC market."
+- GOOD: "Why did they remove that scene? It wasn't a creative mistake. They modified their intellectual property to ensure regulatory compliance. Without it, they lose access to the Chinese market."
+- BAD: "This product functions as a subsidized recruitment vehicle for the military."
+- GOOD: "This isn't just a summer blockbuster. It's a subsidized recruitment vehicle. The Department of Defense provided the logistics, and in exchange, they got control over the narrative."
+
+WRITE FOR THE EAR — the script is spoken aloud by a human host:
+- Use rhetorical questions, brief pauses, insider tone.
+- If a sentence is too long to say in one breath — break it in half.
+- Use active voice. Use short sentences.
+
 SCRIPTING RULES (THE FORENSIC FORMULA):
 1. DEICTIC IMPERATIVE: Direct the viewer's attention to the evidence.
    - Use: "Look at the terminology here," "Notice how they frame this," "Compare this scene to the real footage."
