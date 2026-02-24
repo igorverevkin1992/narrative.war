@@ -20,17 +20,17 @@ export interface TopicSuggestion {
   viralFactor: string;
 }
 
-export interface PrimaryDocument {
-  name: string;
+export interface SmokingGun {
+  source: string;
   url: string;
-  quote: string;
+  quote_or_fact: string;
 }
 
 export interface ResearchDossier {
   topic: string;
-  primaryDocuments: PrimaryDocument[];
   visualEvidence: string[];
-  dataPoints: DataPoint[];
+  smokingGun: SmokingGun;
+  contextPoints: DataPoint[];
 }
 
 export interface ScriptBlock {

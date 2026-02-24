@@ -12,7 +12,7 @@ export const AGENT_MODELS = {
 } as const;
 
 // --- TIMING CONFIG ---
-export const CHARS_PER_SECOND = 12; // Documentary/Dramatic pace ~130-140 wpm
+export const CHARS_PER_SECOND = 15; // ~150 wpm pace, matches duration formula: chars/15 = seconds
 export const MIN_BLOCK_DURATION_SEC = 2;
 
 // --- IMAGE GENERATION CONFIG ---

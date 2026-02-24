@@ -238,20 +238,17 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string): Pro
           type: Type.OBJECT,
           properties: {
             topic: { type: Type.STRING },
-            primaryDocuments: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  url: { type: Type.STRING },
-                  quote: { type: Type.STRING }
-                },
-                required: ["name", "url", "quote"]
-              }
-            },
             visualEvidence: { type: Type.ARRAY, items: { type: Type.STRING } },
-            dataPoints: {
+            smokingGun: {
+              type: Type.OBJECT,
+              properties: {
+                source: { type: Type.STRING },
+                url: { type: Type.STRING },
+                quote_or_fact: { type: Type.STRING }
+              },
+              required: ["source", "url", "quote_or_fact"]
+            },
+            contextPoints: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
@@ -263,7 +260,7 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string): Pro
               }
             }
           },
-          required: ["topic", "primaryDocuments", "visualEvidence", "dataPoints"]
+          required: ["topic", "visualEvidence", "smokingGun", "contextPoints"]
         }
       }
     });
@@ -322,7 +319,7 @@ export const runWriterAgent = async (structure: string, dossier: ResearchDossier
     // --------------------------------------------------
 
     const thinkingConfig = (model.includes('gemini-3') || model.includes('gemini-2.5'))
-      ? { thinkingBudget: 2048 }
+      ? { thinkingBudget: 8192 }
       : undefined;
 
     const response = await ai.models.generateContentStream({
@@ -330,6 +327,7 @@ export const runWriterAgent = async (structure: string, dossier: ResearchDossier
       contents: `DOSSIER: ${dossierStr}\nSTRUCTURE: ${structure}\n\n${enhancedPrompt}`,
       config: {
         responseMimeType: "application/json",
+        maxOutputTokens: 65536,
         thinkingConfig,
         responseSchema: {
           type: Type.ARRAY,
