@@ -5,6 +5,17 @@ interface RichTextDisplayProps {
   className?: string;
 }
 
+// Simple helper to bold text between ** **
+const parseBold = (text: string) => {
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="text-white font-bold">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+};
+
 const RichTextDisplay: React.FC<RichTextDisplayProps> = memo(({ content, className = '' }) => {
   if (!content) return null;
 
@@ -15,7 +26,7 @@ const RichTextDisplay: React.FC<RichTextDisplayProps> = memo(({ content, classNa
     <div className={`space-y-1 font-mono text-sm leading-relaxed ${className}`}>
       {lines.map((line, idx) => {
         const trimmed = line.trim();
-        
+
         // Handle Headers (/// or ===)
         if (trimmed.startsWith('///') || trimmed.startsWith('===') || trimmed.startsWith('STEP')) {
           return (
@@ -73,19 +84,6 @@ const RichTextDisplay: React.FC<RichTextDisplayProps> = memo(({ content, classNa
       })}
     </div>
   );
-};
-
-// Simple helper to bold text between ** **
-const parseBold = (text: string) => {
-  const parts = text.split(/(\*\*.*?\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={i} className="text-white font-bold">{part.slice(2, -2)}</strong>;
-    }
-    return part;
-  });
-};
-
 });
 
 RichTextDisplay.displayName = 'RichTextDisplay';
