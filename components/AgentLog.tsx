@@ -1,5 +1,5 @@
 
-import { useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 
 interface AgentLogProps {
   logs: string[];
@@ -16,7 +16,7 @@ const getTimestamp = (index: number): string => {
   return ts;
 };
 
-const AgentLog: React.FC<AgentLogProps> = ({ logs }) => {
+const AgentLog: React.FC<AgentLogProps> = memo(({ logs }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,5 +44,9 @@ const AgentLog: React.FC<AgentLogProps> = ({ logs }) => {
     </div>
   );
 };
+
+});
+
+AgentLog.displayName = 'AgentLog';
 
 export default AgentLog;

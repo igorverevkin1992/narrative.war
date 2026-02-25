@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { memo } from 'react';
 
 interface RichTextDisplayProps {
   content: string;
   className?: string;
 }
 
-const RichTextDisplay: React.FC<RichTextDisplayProps> = ({ content, className = '' }) => {
+const RichTextDisplay: React.FC<RichTextDisplayProps> = memo(({ content, className = '' }) => {
   if (!content) return null;
 
   // Split by newlines to process structure
@@ -85,5 +85,9 @@ const parseBold = (text: string) => {
     return part;
   });
 };
+
+});
+
+RichTextDisplay.displayName = 'RichTextDisplay';
 
 export default RichTextDisplay;

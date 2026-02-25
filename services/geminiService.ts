@@ -3,18 +3,31 @@ import { AGENT_SCOUT_PROMPT, AGENT_LENS_PROMPT, AGENT_RESEARCH_PROMPT, AGENT_ARC
 import { ResearchDossier, ScriptBlock, TopicSuggestion } from "../types";
 import { logger } from "./logger";
 
-// Helper to ensure API key exists
+// API client factory.
+// Proxy mode (recommended): set VITE_USE_PROXY=true in .env
+//   → All calls go through FastAPI at VITE_BACKEND_URL, API key stays on server.
+//   → Backend must have GOOGLE_API_KEY in its environment.
+// Direct mode (default): VITE_GOOGLE_API_KEY is used directly from browser.
+//   → Key is exposed in the client bundle (acceptable for local personal use).
 const getClient = () => {
-  const apiKey = import.meta.env.VITE_GOOGLE_API_KEY; // Убедитесь, что используете правильную переменную окружения для Vite
+  const useProxy = import.meta.env.VITE_USE_PROXY === 'true';
+  if (useProxy) {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
+    // Route through FastAPI proxy — real key is added by backend, never sent to browser.
+    return new GoogleGenAI({
+      apiKey: "proxy",
+      httpOptions: { baseUrl: `${backendUrl}/api/gemini` }
+    });
+  }
+  const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
   if (!apiKey) {
-    throw new Error("API Key is missing. Please set VITE_GOOGLE_API_KEY");
+    throw new Error("API Key missing. Set VITE_GOOGLE_API_KEY (direct) or VITE_USE_PROXY=true (backend proxy).");
   }
   return new GoogleGenAI({ apiKey });
 };
 
-// --- NEW: STYLE RETRIEVAL HELPER ---
-// Функция для связи с вашим локальным Python-сервером
-const BACKEND_URL = "http://localhost:8000";
+// --- STYLE RETRIEVAL HELPER ---
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
 
 async function fetchHarrisStyle(topic: string): Promise<string> {
   try {
@@ -271,11 +284,11 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string): Pro
   }, 'runAnalystAgent');
 };
 
-export const runArchitectAgent = async (dossier: ResearchDossier | string): Promise<string> => {
+export const runArchitectAgent = async (dossier: string): Promise<string> => {
   const model = AGENT_MODELS.ARCHITECT;
   return withRetry(async () => {
     const ai = getClient();
-    const dossierStr = typeof dossier === 'string' ? dossier : JSON.stringify(dossier, null, 2);
+    const dossierStr = dossier;
 
     const response = await ai.models.generateContent({
       model,
@@ -288,20 +301,16 @@ export const runArchitectAgent = async (dossier: ResearchDossier | string): Prom
 // Writer uses streaming to prevent ERR_CONNECTION_CLOSED on large responses.
 // Pro model + 60 blocks + bilingual text + thinking can take 2-3 min.
 // Streaming keeps the connection alive with incremental data chunks.
-export const runWriterAgent = async (structure: string, dossier: ResearchDossier | string): Promise<ScriptBlock[]> => {
+export const runWriterAgent = async (structure: string, dossier: string): Promise<ScriptBlock[]> => {
   const model = AGENT_MODELS.WRITER;
   return withRetry(async () => {
     const ai = getClient();
-    const dossierStr = typeof dossier === 'string' ? dossier : JSON.stringify(dossier, null, 2);
-    
-    // --- NEW: Extract topic and fetch style context ---
-    let topicForStyle = "General geopolitical conflict"; // fallback
-    try {
-        const dossierObj = typeof dossier === 'string' ? JSON.parse(dossier) : dossier;
-        if (dossierObj.topic) topicForStyle = dossierObj.topic;
-    } catch (e) {
-        logger.warn("Could not parse dossier topic for style fetch, using default.");
-    }
+    const dossierStr = dossier;
+
+    // Extract topic for style fetch (dossier always starts with "TOPIC: ...")
+    let topicForStyle = "General geopolitical conflict";
+    const topicMatch = dossier.match(/^TOPIC:\s*(.+)/m);
+    if (topicMatch) topicForStyle = topicMatch[1].trim();
 
     const styleContext = await fetchHarrisStyle(topicForStyle);
     

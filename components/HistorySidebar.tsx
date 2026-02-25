@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { HistoryItem } from '../types';
 
 interface HistorySidebarProps {
@@ -9,7 +9,7 @@ interface HistorySidebarProps {
   onDelete: (id: number, e: React.MouseEvent) => void;
 }
 
-const HistorySidebar: React.FC<HistorySidebarProps> = ({ history, isOpen, onClose, onSelect, onDelete }) => {
+const HistorySidebar: React.FC<HistorySidebarProps> = memo(({ history, isOpen, onClose, onSelect, onDelete }) => {
   return (
     <>
       {/* Backdrop overlay */}
@@ -71,5 +71,9 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({ history, isOpen, onClos
     </>
   );
 };
+
+});
+
+HistorySidebar.displayName = 'HistorySidebar';
 
 export default HistorySidebar;

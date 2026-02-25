@@ -1,7 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ScriptBlock } from '../types';
 import { APP_VERSION } from '../constants';
+
+const PAGE_SIZE = 20;
 
 interface ScriptDisplayProps {
   script: ScriptBlock[];
@@ -31,6 +33,15 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
 }) => {
   const [loadingImages, setLoadingImages] = useState<number[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+
+  const totalPages = Math.ceil(script.length / PAGE_SIZE);
+  const visibleBlocks = useMemo(
+    () => script.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+    [script, page]
+  );
+  // Global index offset so generate-image still gets the correct index
+  const pageOffset = page * PAGE_SIZE;
 
   const handleGenImage = async (index: number) => {
     if (!onGenerateImage) return;
@@ -262,6 +273,40 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
           </div>
         </div>
 
+        {/* Pagination controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-b border-mw-slate/20 bg-black/20">
+            <span className="text-xs text-mw-slate font-mono">
+              Blocks {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, script.length)} of {script.length}
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="px-3 py-1 text-xs font-mono border border-mw-slate/40 rounded text-mw-slate hover:border-mw-red hover:text-mw-red transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                ← Prev
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPage(i)}
+                  className={`px-3 py-1 text-xs font-mono border rounded transition-all ${i === page ? 'border-mw-red text-mw-red bg-mw-red/10' : 'border-mw-slate/40 text-mw-slate hover:border-mw-red hover:text-mw-red'}`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                disabled={page === totalPages - 1}
+                className="px-3 py-1 text-xs font-mono border border-mw-slate/40 rounded text-mw-slate hover:border-mw-red hover:text-mw-red transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -273,59 +318,62 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-mw-slate/20 font-mono text-sm">
-              {script.map((block, idx) => (
-                <tr key={idx} className="hover:bg-mw-slate/5 transition-colors">
-                  <td className="p-4 align-top text-mw-red font-bold whitespace-nowrap">
-                    {block.timecode}
-                    <div className="text-[10px] text-mw-slate mt-1 border border-mw-slate/30 rounded px-1 inline-block">
-                      {block.blockType}
-                    </div>
-                  </td>
-                  <td className="p-4 align-top text-blue-200/90 text-xs">
-                    <div className="mb-2 italic">{block.visualCue}</div>
-
-                    {block.imageUrl ? (
-                      <div className="mt-2 rounded overflow-hidden border border-mw-slate/50 relative group">
-                        <img
-                          src={block.imageUrl}
-                          alt="Storyboard"
-                          className="w-full h-auto object-cover cursor-zoom-in hover:brightness-110 transition-all"
-                          onClick={() => setSelectedImage(block.imageUrl || null)}
-                        />
-                        <button
-                           onClick={() => handleGenImage(idx)}
-                           className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                           Regenerate
-                        </button>
+              {visibleBlocks.map((block, localIdx) => {
+                const globalIdx = pageOffset + localIdx;
+                return (
+                  <tr key={globalIdx} className="hover:bg-mw-slate/5 transition-colors">
+                    <td className="p-4 align-top text-mw-red font-bold whitespace-nowrap">
+                      {block.timecode}
+                      <div className="text-[10px] text-mw-slate mt-1 border border-mw-slate/30 rounded px-1 inline-block">
+                        {block.blockType}
                       </div>
-                    ) : (
-                      onGenerateImage && (
-                        <button
-                          onClick={() => handleGenImage(idx)}
-                          disabled={loadingImages.includes(idx)}
-                          className="mt-2 text-[10px] flex items-center gap-2 border border-mw-slate/30 px-2 py-1 rounded text-mw-slate hover:text-white hover:border-white transition-all w-full justify-center"
-                        >
-                           {loadingImages.includes(idx) ? (
+                    </td>
+                    <td className="p-4 align-top text-blue-200/90 text-xs">
+                      <div className="mb-2 italic">{block.visualCue}</div>
+
+                      {block.imageUrl ? (
+                        <div className="mt-2 rounded overflow-hidden border border-mw-slate/50 relative group">
+                          <img
+                            src={block.imageUrl}
+                            alt="Storyboard"
+                            className="w-full h-auto object-cover cursor-zoom-in hover:brightness-110 transition-all"
+                            onClick={() => setSelectedImage(block.imageUrl || null)}
+                          />
+                          <button
+                            onClick={() => handleGenImage(globalIdx)}
+                            className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            Regenerate
+                          </button>
+                        </div>
+                      ) : (
+                        onGenerateImage && (
+                          <button
+                            onClick={() => handleGenImage(globalIdx)}
+                            disabled={loadingImages.includes(globalIdx)}
+                            className="mt-2 text-[10px] flex items-center gap-2 border border-mw-slate/30 px-2 py-1 rounded text-mw-slate hover:text-white hover:border-white transition-all w-full justify-center"
+                          >
+                            {loadingImages.includes(globalIdx) ? (
                               <span className="animate-pulse">GENERATING...</span>
-                           ) : (
+                            ) : (
                               <>
                                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                                 GEN STORYBOARD
                               </>
-                           )}
-                        </button>
-                      )
-                    )}
-                  </td>
-                  <td className="p-4 align-top text-gray-300 leading-relaxed italic">
-                    "{block.audioScript}"
-                  </td>
-                  <td className="p-4 align-top text-gray-400 leading-relaxed italic border-l border-mw-slate/10">
-                    "{block.russianScript}"
-                  </td>
-                </tr>
-              ))}
+                            )}
+                          </button>
+                        )
+                      )}
+                    </td>
+                    <td className="p-4 align-top text-gray-300 leading-relaxed italic">
+                      "{block.audioScript}"
+                    </td>
+                    <td className="p-4 align-top text-gray-400 leading-relaxed italic border-l border-mw-slate/10">
+                      "{block.russianScript}"
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -13,12 +13,13 @@ export default defineConfig(({ mode }) => {
       plugins: [react(), tailwindcss()],
       define: {
         // WARNING: These keys are exposed in the client bundle.
-        // TODO: Migrate to a backend proxy (Supabase Edge Function / API route)
-        // so that API keys never reach the browser.
+        // TODO: Migrate to a backend proxy so that API keys never reach the browser.
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.SUPABASE_URL': JSON.stringify(env.SUPABASE_URL),
         'process.env.SUPABASE_KEY': JSON.stringify(env.SUPABASE_KEY),
+        // VITE_ prefixed vars (VITE_BACKEND_URL, VITE_GOOGLE_API_KEY) are
+        // available via import.meta.env automatically — no manual define needed.
       },
       resolve: {
         alias: {

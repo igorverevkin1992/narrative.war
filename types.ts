@@ -64,9 +64,12 @@ export interface SystemState {
   // Agent Outputs
   scoutSuggestions?: TopicSuggestion[]; // Output from Scout
   radarOutput?: string; // Potential viral topics
-  researchDossier?: ResearchDossier | string; // Now supports raw text for editing
+  researchDossier?: string; // Always stored as formatted string
   structureMap?: string; // 5-block structure plan
   finalScript?: ScriptBlock[];
+
+  // Error surfacing
+  lastError?: string;
   
   // History
   history: HistoryItem[];
