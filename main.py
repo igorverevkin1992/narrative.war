@@ -78,10 +78,11 @@ async def gemini_proxy(path: str, request: Request):
 
     is_stream = "streamGenerateContent" in path or params.get("alt") == "sse"
 
-    async with httpx.AsyncClient(timeout=300.0) as client:
-        if is_stream:
-            async def stream_generator():
-                async with client.stream(
+    if is_stream:
+        async def stream_generator():
+            # Client must live inside the generator — it outlives the route handler
+            async with httpx.AsyncClient(timeout=300.0) as stream_client:
+                async with stream_client.stream(
                     "POST",
                     target_url,
                     content=body,
@@ -91,8 +92,9 @@ async def gemini_proxy(path: str, request: Request):
                     async for chunk in resp.aiter_bytes():
                         yield chunk
 
-            return StreamingResponse(stream_generator(), media_type="application/json")
-        else:
+        return StreamingResponse(stream_generator(), media_type="application/json")
+    else:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             resp = await client.post(
                 target_url,
                 content=body,
