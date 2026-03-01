@@ -43,8 +43,6 @@ const AgentLog: React.FC<AgentLogProps> = memo(({ logs }) => {
       </div>
     </div>
   );
-};
-
 });
 
 AgentLog.displayName = 'AgentLog';

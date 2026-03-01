@@ -70,8 +70,6 @@ const HistorySidebar: React.FC<HistorySidebarProps> = memo(({ history, isOpen, o
       </div>
     </>
   );
-};
-
 });
 
 HistorySidebar.displayName = 'HistorySidebar';
