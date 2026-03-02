@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from scripts.style_search import get_style_examples
 
-app = FastAPI(title="MediaWar Backend", version="3.3")
+app = FastAPI(title="NARRATIVE.WAR Backend", version="3.3")
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,7 +31,7 @@ class TopicRequest(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"status": "MediaWar Backend is running", "version": "3.3"}
+    return {"status": "NARRATIVE.WAR Backend is running", "version": "3.3"}
 
 
 @app.get("/api/prompts")

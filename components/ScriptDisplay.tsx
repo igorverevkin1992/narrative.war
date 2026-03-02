@@ -117,13 +117,13 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   const handleExportDossierOnly = () => {
     const header = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><meta charset='utf-8'><title>MEDIAWAR DOSSIER</title>
+      <head><meta charset='utf-8'><title>NARRATIVE.WAR DOSSIER</title>
       ${getDocStyles()}
       </head><body>
       <div class="Section1">
 
       <h1>INTELLIGENCE DOSSIER: ${safeTopic}</h1>
-      <p><strong>MEDIAWAR.CORE V${APP_VERSION} // RESEARCH DATA ONLY</strong></p>
+      <p><strong>NARRATIVE.WAR V${APP_VERSION} // RESEARCH DATA ONLY</strong></p>
       <p>Generated: ${escapeHtml(new Date().toLocaleString())}</p>
       <hr/>
 
@@ -149,13 +149,13 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   const handleExportScriptOnly = () => {
     const header = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><meta charset='utf-8'><title>MEDIAWAR SCRIPT</title>
+      <head><meta charset='utf-8'><title>NARRATIVE.WAR SCRIPT</title>
       ${getDocStyles()}
       </head><body>
       <div class="Section1">
 
       <h1>SCRIPT: ${safeTopic}</h1>
-      <p><strong>MEDIAWAR.CORE V${APP_VERSION} // PRODUCTION SCRIPT</strong></p>
+      <p><strong>NARRATIVE.WAR V${APP_VERSION} // PRODUCTION SCRIPT</strong></p>
       <p>Generated: ${escapeHtml(new Date().toLocaleString())}</p>
       <hr/>
 
@@ -248,7 +248,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
             <h2 className="text-xl font-bold text-mw-red uppercase tracking-wider">
               Final Generated Script
             </h2>
-            <p className="text-xs text-mw-slate mt-1 font-mono">MEDIAWAR.CORE V{APP_VERSION} // EXPORT_READY</p>
+            <p className="text-xs text-mw-slate mt-1 font-mono">NARRATIVE.WAR V{APP_VERSION} // EXPORT_READY</p>
           </div>
 
           <div className="flex gap-2">

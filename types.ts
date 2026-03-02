@@ -84,7 +84,7 @@ export const INITIAL_STATE: SystemState = {
   isProcessing: false,
   isSteppable: false,
   stepStatus: 'IDLE',
-  logs: ['> MEDIAWAR.CORE INITIALIZED...', '> WAITING FOR TARGET VECTOR...'],
+  logs: ['> NARRATIVE.WAR INITIALIZED...', '> WAITING FOR TARGET VECTOR...'],
   history: [],
   showHistory: false
 };
