@@ -23,8 +23,8 @@ export const IMAGE_GEN_PROMPT_PREFIX = 'Cinematic storyboard frame, high contras
 export const MAX_LOG_ENTRIES = 500;
 
 // --- API CONFIG ---
-export const API_RETRY_COUNT = 3;
-export const API_RETRY_BASE_DELAY_MS = 1000;
+export const API_RETRY_COUNT = 5;           // 503 UNAVAILABLE needs longer recovery window
+export const API_RETRY_BASE_DELAY_MS = 2000; // backoff: 2s, 4s, 8s, 16s, 32s = ~62s total
 
 export const AVAILABLE_MODELS = [
   { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash (Fast/High Quota)' },
