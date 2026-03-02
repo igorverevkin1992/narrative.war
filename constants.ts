@@ -6,7 +6,7 @@ export const APP_VERSION = '3.3';
 export const AGENT_MODELS = {
   SCOUT:     'gemini-3-flash-preview',
   RADAR:     'gemini-3-flash-preview',
-  ANALYST:   'gemini-3.1-pro-preview',
+  ANALYST:   'gemini-3-flash-preview',  // Pro disconnects/empty; Flash reliable for research
   ARCHITECT: 'gemini-3-flash-preview',
   WRITER:    'gemini-3.1-pro-preview',
 } as const;

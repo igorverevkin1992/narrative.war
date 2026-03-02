@@ -109,6 +109,7 @@ async def gemini_proxy(path: str, request: Request):
                     params=params,
                     headers={"Content-Type": "application/json"},
                 )
+                print(f"🔍 Gemini {resp.status_code} for {path.split('/')[-1]} | body[:300]: {resp.text[:300]}")
                 return resp.json()
         except httpx.RemoteProtocolError as e:
             print(f"❌ Gemini disconnected (non-stream): {e}")
