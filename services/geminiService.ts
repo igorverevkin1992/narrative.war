@@ -84,6 +84,17 @@ function safeJsonParse<T>(text: string, label: string): T {
   }
 }
 
+// Extracts the first JSON object or array from free-form text.
+// Required when googleSearch grounding is active — incompatible with responseMimeType/responseSchema.
+function extractJson<T>(text: string, label: string): T {
+  const match = text.match(/```json\s*([\s\S]*?)```/) || text.match(/([\[{][\s\S]*[\]}])/);
+  if (!match) {
+    logger.error(`${label}: No JSON block found in grounded response`, { text: text.substring(0, 300) });
+    throw new Error(`${label}: No JSON found in response`);
+  }
+  return safeJsonParse<T>(match[1].trim(), label);
+}
+
 // --- TIMING CALCULATION MODULE ---
 
 const ONES = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
@@ -192,31 +203,17 @@ export const runScoutAgent = async (): Promise<TopicSuggestion[]> => {
     const ai = getClient();
     const tools = getToolsForModel(model);
 
+    // googleSearch grounding is incompatible with responseMimeType/responseSchema —
+    // use free-text response and extract JSON manually.
     const response = await ai.models.generateContent({
       model,
       contents: AGENT_SCOUT_PROMPT,
-      config: {
-        tools,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              hook: { type: Type.STRING },
-              narrativeAngle: { type: Type.STRING },
-              viralFactor: { type: Type.STRING }
-            },
-            required: ["title", "hook", "narrativeAngle", "viralFactor"]
-          }
-        }
-      }
+      config: { tools }
     });
 
     const text = response.text;
     if (!text) throw new Error("Scout returned empty intel.");
-    return safeJsonParse<TopicSuggestion[]>(text, 'Scout');
+    return extractJson<TopicSuggestion[]>(text, 'Scout');
   }, 'runScoutAgent');
 };
 
@@ -241,46 +238,17 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string): Pro
     const ai = getClient();
     const tools = getToolsForModel(model);
 
+    // googleSearch grounding is incompatible with responseMimeType/responseSchema —
+    // use free-text response and extract JSON manually.
     const response = await ai.models.generateContent({
       model,
       contents: `TOPIC: ${topic}\n\nLENS ANALYSIS: ${radarAnalysis}\n\n${AGENT_RESEARCH_PROMPT}`,
-      config: {
-        tools,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            topic: { type: Type.STRING },
-            visualEvidence: { type: Type.ARRAY, items: { type: Type.STRING } },
-            smokingGun: {
-              type: Type.OBJECT,
-              properties: {
-                source: { type: Type.STRING },
-                url: { type: Type.STRING },
-                quote_or_fact: { type: Type.STRING }
-              },
-              required: ["source", "url", "quote_or_fact"]
-            },
-            contextPoints: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  label: { type: Type.STRING },
-                  value: { type: Type.STRING }
-                },
-                required: ["label", "value"]
-              }
-            }
-          },
-          required: ["topic", "visualEvidence", "smokingGun", "contextPoints"]
-        }
-      }
+      config: { tools }
     });
 
     const text = response.text;
     if (!text) throw new Error("Analyst returned empty data.");
-    return safeJsonParse<ResearchDossier>(text, 'Analyst');
+    return extractJson<ResearchDossier>(text, 'Analyst');
   }, 'runAnalystAgent');
 };
 
