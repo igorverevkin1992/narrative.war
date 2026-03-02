@@ -101,14 +101,21 @@ async def gemini_proxy(path: str, request: Request):
 
         return StreamingResponse(stream_generator(), media_type="application/json")
     else:
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            resp = await client.post(
-                target_url,
-                content=body,
-                params=params,
-                headers={"Content-Type": "application/json"},
-            )
-            return resp.json()
+        try:
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                resp = await client.post(
+                    target_url,
+                    content=body,
+                    params=params,
+                    headers={"Content-Type": "application/json"},
+                )
+                return resp.json()
+        except httpx.RemoteProtocolError as e:
+            print(f"❌ Gemini disconnected (non-stream): {e}")
+            raise HTTPException(status_code=503, detail="Gemini disconnected before sending response. Retry.")
+        except Exception as e:
+            print(f"❌ Gemini proxy error: {type(e).__name__}: {e}")
+            raise HTTPException(status_code=502, detail=f"Proxy error: {type(e).__name__}")
 
 
 if __name__ == "__main__":
