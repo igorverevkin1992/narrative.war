@@ -6,9 +6,9 @@ export const APP_VERSION = '3.3';
 export const AGENT_MODELS = {
   SCOUT:     'gemini-3-flash-preview',
   RADAR:     'gemini-3-flash-preview',
-  ANALYST:   'gemini-3-flash-preview',  // Pro disconnects/empty; Flash reliable for research
+  ANALYST:   'gemini-3-pro-preview',
   ARCHITECT: 'gemini-3-flash-preview',
-  WRITER:    'gemini-3.1-pro-preview',
+  WRITER:    'gemini-3-pro-preview',
 } as const;
 
 // --- TIMING CONFIG ---
@@ -16,7 +16,7 @@ export const CHARS_PER_SECOND = 15; // ~150 wpm pace, matches duration formula: 
 export const MIN_BLOCK_DURATION_SEC = 2;
 
 // --- IMAGE GENERATION CONFIG ---
-export const IMAGE_GEN_MODEL = 'gemini-3.1-flash-image-preview';
+export const IMAGE_GEN_MODEL = 'gemini-2.5-flash-image';
 export const IMAGE_GEN_PROMPT_PREFIX = 'Cinematic storyboard frame, high contrast, geopolitical thriller style. SCENE:';
 
 // --- LOG CONFIG ---
@@ -28,7 +28,7 @@ export const API_RETRY_BASE_DELAY_MS = 2000; // backoff: 2s, 4s, 8s, 16s, 32s = 
 
 export const AVAILABLE_MODELS = [
   { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash (Fast/High Quota)' },
-  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (High Quality)' }
+  { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro (High Quality)' }
 ];
 
 export const AGENT_SCOUT_PROMPT = `
