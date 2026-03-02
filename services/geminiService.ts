@@ -273,27 +273,54 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string): Pro
   const model = AGENT_MODELS.ANALYST;
   return withRetry(async () => {
     const ai = getClient();
-    const tools = getToolsForModel(model);
 
-    // googleSearch grounding is incompatible with responseMimeType/responseSchema —
-    // use free-text response and extract JSON manually.
+    // No googleSearch tool for Pro model (causes disconnect).
+    // responseSchema restored now that googleSearch is removed (they were incompatible).
     const response = await ai.models.generateContent({
       model,
       contents: `TOPIC: ${topic}\n\nLENS ANALYSIS: ${radarAnalysis}\n\n${AGENT_RESEARCH_PROMPT}`,
       config: {
-        tools,
+        responseMimeType: "application/json",
         safetySettings: [
           { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
           { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,       threshold: HarmBlockThreshold.BLOCK_NONE },
           { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
           { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
         ],
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            topic:         { type: Type.STRING },
+            visualEvidence: { type: Type.ARRAY, items: { type: Type.STRING } },
+            smokingGun: {
+              type: Type.OBJECT,
+              properties: {
+                source:       { type: Type.STRING },
+                url:          { type: Type.STRING },
+                quote_or_fact: { type: Type.STRING },
+              },
+              required: ["source", "url", "quote_or_fact"],
+            },
+            contextPoints: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  label: { type: Type.STRING },
+                  value: { type: Type.STRING },
+                },
+                required: ["label", "value"],
+              },
+            },
+          },
+          required: ["topic", "visualEvidence", "smokingGun", "contextPoints"],
+        },
       }
     });
 
-    const text = extractResponseText(response, 'Analyst');
+    const text = response.text;
     if (!text) throw new Error("Analyst returned empty data.");
-    return extractJson<ResearchDossier>(text, 'Analyst');
+    return safeJsonParse<ResearchDossier>(text, 'Analyst');
   }, 'runAnalystAgent');
 };
 
