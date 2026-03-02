@@ -274,19 +274,16 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string): Pro
   return withRetry(async () => {
     const ai = getClient();
 
-    // No googleSearch tool for Pro model (causes disconnect).
-    // responseSchema restored now that googleSearch is removed (they were incompatible).
+    // Original working config: responseSchema + googleSearch, no safetySettings.
+    // safetySettings caused TCP disconnect on Pro models; removed.
+    // googleSearch works on gemini-3-pro-preview (3.0), was issue only with 3.1-pro.
+    const tools = getToolsForModel(model);
     const response = await ai.models.generateContent({
       model,
       contents: `TOPIC: ${topic}\n\nLENS ANALYSIS: ${radarAnalysis}\n\n${AGENT_RESEARCH_PROMPT}`,
       config: {
+        tools,
         responseMimeType: "application/json",
-        safetySettings: [
-          { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,       threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        ],
         responseSchema: {
           type: Type.OBJECT,
           properties: {
