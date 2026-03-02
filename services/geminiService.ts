@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { AGENT_SCOUT_PROMPT, AGENT_LENS_PROMPT, AGENT_RESEARCH_PROMPT, AGENT_ARCHITECT_PROMPT, AGENT_SCRIPTWRITER_PROMPT, CHARS_PER_SECOND, MIN_BLOCK_DURATION_SEC, IMAGE_GEN_MODEL, IMAGE_GEN_PROMPT_PREFIX, API_RETRY_COUNT, API_RETRY_BASE_DELAY_MS, AGENT_MODELS } from "../constants";
 import { ResearchDossier, ScriptBlock, TopicSuggestion } from "../types";
 import { logger } from "./logger";
@@ -89,9 +89,10 @@ function extractResponseText(response: any, label: string): string {
     if (assembled) return assembled;
   }
 
-  // Log full response structure for diagnosis
+  // Check if prompt was blocked by safety filters (no candidates at all)
+  const blockReason = response.promptFeedback?.blockReason;
   const finishReason = response.candidates?.[0]?.finishReason;
-  logger.error(`${label}: empty text. finishReason=${finishReason}`, {
+  logger.error(`${label}: empty text. blockReason=${blockReason} finishReason=${finishReason}`, {
     candidateCount: response.candidates?.length ?? 0,
     parts: parts?.map((p: any) => Object.keys(p)),
   });
@@ -230,10 +231,19 @@ export const runScoutAgent = async (): Promise<TopicSuggestion[]> => {
 
     // googleSearch grounding is incompatible with responseMimeType/responseSchema —
     // use free-text response and extract JSON manually.
+    // safetySettings BLOCK_NONE required: geopolitical/military research triggers default filters.
     const response = await ai.models.generateContent({
       model,
       contents: AGENT_SCOUT_PROMPT,
-      config: { tools }
+      config: {
+        tools,
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,       threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ],
+      }
     });
 
     const text = extractResponseText(response, 'Scout');
@@ -268,7 +278,15 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string): Pro
     const response = await ai.models.generateContent({
       model,
       contents: `TOPIC: ${topic}\n\nLENS ANALYSIS: ${radarAnalysis}\n\n${AGENT_RESEARCH_PROMPT}`,
-      config: { tools }
+      config: {
+        tools,
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,       threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ],
+      }
     });
 
     const text = extractResponseText(response, 'Analyst');
