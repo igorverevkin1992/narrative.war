@@ -177,7 +177,9 @@ export function useAgentPipeline({
   }, [newController, dispatch, addLog, setEditedDossier, executeArchitect]);
 
   // ── RADAR ───────────────────────────────────────────────────────────────────
-  const executeRadar = useCallback(async (overrideTopic?: string) => {
+  // fullContext is optional: richer prompt for Radar (includes Scout hook/angle/viral),
+  // while activeTopic stays clean (title only) for state/history/display.
+  const executeRadar = useCallback(async (overrideTopic?: string, fullContext?: string) => {
     const activeTopic = overrideTopic ?? stateRef.current.topic;
     if (!activeTopic.trim()) {
       addLog('ERROR: No Target Vector.');
@@ -190,7 +192,7 @@ export function useAgentPipeline({
 
     const radarOutput = await runStep(
       AgentType.RADAR,
-      () => runRadarAgent(activeTopic),
+      () => runRadarAgent(fullContext ?? activeTopic),
       dispatch, addLog, controller,
       () => {}
     );
@@ -256,8 +258,16 @@ export function useAgentPipeline({
 
   const handleSelectTopic = useCallback((suggestion: TopicSuggestion) => {
     addLog(`>>> TARGET CONFIRMED: ${suggestion.title}`);
+    // Pass full Scout context to Radar so it anchors on specific details (hook, angle, viral factor).
+    // state.topic stays as the clean title for display/history/style-fetch.
+    const richContext = [
+      suggestion.title,
+      suggestion.hook          ? `\nSCOUT HOOK: ${suggestion.hook}` : '',
+      suggestion.narrativeAngle ? `\nNARRATIVE ANGLE: ${suggestion.narrativeAngle}` : '',
+      suggestion.viralFactor   ? `\nVIRAL FACTOR: ${suggestion.viralFactor}` : '',
+    ].join('');
     dispatch({ type: 'MERGE', partial: { topic: suggestion.title, currentAgent: 'IDLE' } });
-    executeRadar(suggestion.title);
+    executeRadar(suggestion.title, richContext);
   }, [dispatch, addLog, executeRadar]);
 
   return {

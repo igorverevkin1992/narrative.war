@@ -100,9 +100,10 @@ STRICT CONSTRAINTS:
 - Never say "It is rumored". Cite the primary source or the historical record.
 
 OUTPUT FORMAT:
-Return a valid JSON object:
+Return a valid JSON object.
+IMPORTANT: The "topic" field MUST match exactly the TOPIC provided to you. Do not rename, rephrase, or substitute it with a different example.
 {
-  "topic": "Topic Name",
+  "topic": "Exact topic as provided",
   "visualEvidence": [
     "Description of a side-by-side comparison (Reality vs. Media)",
     "Description of a specific highlighted document or headline"
