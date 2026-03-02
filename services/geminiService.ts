@@ -73,6 +73,31 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
   throw lastError;
 }
 
+// --- RESPONSE TEXT EXTRACTOR ---
+// response.text may be empty when googleSearch grounding is active on some models.
+// Falls back to manually assembling text from candidates[0].content.parts.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractResponseText(response: any, label: string): string {
+  const direct = response.text as string | undefined;
+  if (direct) return direct;
+
+  // Manual fallback: collect all text parts from first candidate
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parts = response.candidates?.[0]?.content?.parts as any[] | undefined;
+  if (parts?.length) {
+    const assembled = parts.filter(p => typeof p.text === 'string').map(p => p.text as string).join('');
+    if (assembled) return assembled;
+  }
+
+  // Log full response structure for diagnosis
+  const finishReason = response.candidates?.[0]?.finishReason;
+  logger.error(`${label}: empty text. finishReason=${finishReason}`, {
+    candidateCount: response.candidates?.length ?? 0,
+    parts: parts?.map((p: any) => Object.keys(p)),
+  });
+  return '';
+}
+
 // --- SAFE JSON PARSER ---
 
 function safeJsonParse<T>(text: string, label: string): T {
@@ -211,7 +236,7 @@ export const runScoutAgent = async (): Promise<TopicSuggestion[]> => {
       config: { tools }
     });
 
-    const text = response.text;
+    const text = extractResponseText(response, 'Scout');
     if (!text) throw new Error("Scout returned empty intel.");
     return extractJson<TopicSuggestion[]>(text, 'Scout');
   }, 'runScoutAgent');
@@ -246,7 +271,7 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string): Pro
       config: { tools }
     });
 
-    const text = response.text;
+    const text = extractResponseText(response, 'Analyst');
     if (!text) throw new Error("Analyst returned empty data.");
     return extractJson<ResearchDossier>(text, 'Analyst');
   }, 'runAnalystAgent');
