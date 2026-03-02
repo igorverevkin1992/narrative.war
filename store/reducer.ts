@@ -1,4 +1,5 @@
 import { SystemState, HistoryItem, ScriptBlock } from '../types';
+import { MAX_LOG_ENTRIES } from '../constants';
 
 // Strongly-typed mapped actions: each SET_FIELD variant binds field → correct value type
 type SetFieldActions = {
@@ -11,8 +12,6 @@ export type Action =
   | { type: 'MERGE'; partial: Partial<SystemState> }
   | { type: 'UPDATE_SCRIPT_IMAGE'; index: number; imageUrl: string }
   | { type: 'SET_HISTORY'; history: HistoryItem[] };
-
-const MAX_LOG_ENTRIES = 500;
 
 export function stateReducer(state: SystemState, action: Action): SystemState {
   switch (action.type) {

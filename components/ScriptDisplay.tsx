@@ -1,9 +1,12 @@
 
 import React, { useState, useMemo } from 'react';
 import { ScriptBlock } from '../types';
-import { APP_VERSION } from '../constants';
+import { APP_VERSION, CHARS_PER_SECOND } from '../constants';
 
 const PAGE_SIZE = 20;
+// Minimum characters across all audioScript fields for a 12-minute video.
+// Formula: 12 min × 60 sec × CHARS_PER_SECOND = 10,800
+const MIN_AUDIO_CHARS = 12 * 60 * CHARS_PER_SECOND;
 
 interface ScriptDisplayProps {
   script: ScriptBlock[];
@@ -34,6 +37,8 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   const [loadingImages, setLoadingImages] = useState<number[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [generatingAll, setGeneratingAll] = useState(false);
 
   const totalPages = Math.ceil(script.length / PAGE_SIZE);
   const visibleBlocks = useMemo(
@@ -43,11 +48,31 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   // Global index offset so generate-image still gets the correct index
   const pageOffset = page * PAGE_SIZE;
 
+  // Total audioScript character count and estimated duration
+  const { totalAudioChars, estMinutes } = useMemo(() => {
+    const total = script.reduce((sum, b) => sum + (b.audioScript?.length ?? 0), 0);
+    return { totalAudioChars: total, estMinutes: (total / (CHARS_PER_SECOND * 60)).toFixed(1) };
+  }, [script]);
+
   const handleGenImage = async (index: number) => {
     if (!onGenerateImage) return;
     setLoadingImages(prev => [...prev, index]);
     await onGenerateImage(index);
     setLoadingImages(prev => prev.filter(i => i !== index));
+  };
+
+  // Generate storyboard images for all blocks that don't have one yet, sequentially.
+  const handleGenAllImages = async () => {
+    if (!onGenerateImage || generatingAll) return;
+    const missing = script.map((b, i) => i).filter(i => !script[i].imageUrl);
+    if (!missing.length) return;
+    setGeneratingAll(true);
+    setLoadingImages(missing);
+    for (const i of missing) {
+      await onGenerateImage(i);
+      setLoadingImages(prev => prev.filter(idx => idx !== i));
+    }
+    setGeneratingAll(false);
   };
 
   const getDocStyles = () => `
@@ -115,98 +140,109 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   const safeFilename = topic.replace(/[^a-z0-9]/gi, '_').substring(0, 30);
 
   const handleExportDossierOnly = () => {
-    const header = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><meta charset='utf-8'><title>NARRATIVE.WAR DOSSIER</title>
-      ${getDocStyles()}
-      </head><body>
-      <div class="Section1">
+    try {
+      setExportError(null);
+      const header = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head><meta charset='utf-8'><title>NARRATIVE.WAR DOSSIER</title>
+        ${getDocStyles()}
+        </head><body>
+        <div class="Section1">
 
-      <h1>INTELLIGENCE DOSSIER: ${safeTopic}</h1>
-      <p><strong>NARRATIVE.WAR V${APP_VERSION} // RESEARCH DATA ONLY</strong></p>
-      <p>Generated: ${escapeHtml(new Date().toLocaleString())}</p>
-      <hr/>
+        <h1>INTELLIGENCE DOSSIER: ${safeTopic}</h1>
+        <p><strong>NARRATIVE.WAR V${APP_VERSION} // RESEARCH DATA ONLY</strong></p>
+        <p>Generated: ${escapeHtml(new Date().toLocaleString())}</p>
+        <hr/>
 
-      <h2>AGENT A: RADAR INTERCEPT</h2>
-      <div class="raw-content">${escapeHtml(radarContent || 'No Radar Data Available')}</div>
+        <h2>AGENT A: RADAR INTERCEPT</h2>
+        <div class="raw-content">${escapeHtml(radarContent || 'No Radar Data Available')}</div>
 
-      <div class="page-break"></div>
+        <div class="page-break"></div>
 
-      <h2>AGENT B: INTELLIGENCE DOSSIER</h2>
-      <div class="raw-content">${escapeHtml(analystContent || 'No Analyst Data Available')}</div>
+        <h2>AGENT B: INTELLIGENCE DOSSIER</h2>
+        <div class="raw-content">${escapeHtml(analystContent || 'No Analyst Data Available')}</div>
 
-      <div class="page-break"></div>
+        <div class="page-break"></div>
 
-      <h2>AGENT C: STRUCTURE BLUEPRINT</h2>
-      <div class="raw-content">${escapeHtml(architectContent || 'No Architect Data Available')}</div>
+        <h2>AGENT C: STRUCTURE BLUEPRINT</h2>
+        <div class="raw-content">${escapeHtml(architectContent || 'No Architect Data Available')}</div>
 
-      </div></body></html>
-    `;
-
-    downloadDoc(`DOSSIER_${safeFilename}.doc`, header);
+        </div></body></html>
+      `;
+      downloadDoc(`DOSSIER_${safeFilename}.doc`, header);
+    } catch (e) {
+      setExportError(`Dossier export failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    }
   };
 
   const handleExportScriptOnly = () => {
-    const header = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><meta charset='utf-8'><title>NARRATIVE.WAR SCRIPT</title>
-      ${getDocStyles()}
-      </head><body>
-      <div class="Section1">
+    try {
+      setExportError(null);
+      const header = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head><meta charset='utf-8'><title>NARRATIVE.WAR SCRIPT</title>
+        ${getDocStyles()}
+        </head><body>
+        <div class="Section1">
 
-      <h1>SCRIPT: ${safeTopic}</h1>
-      <p><strong>NARRATIVE.WAR V${APP_VERSION} // PRODUCTION SCRIPT</strong></p>
-      <p>Generated: ${escapeHtml(new Date().toLocaleString())}</p>
-      <hr/>
+        <h1>SCRIPT: ${safeTopic}</h1>
+        <p><strong>NARRATIVE.WAR V${APP_VERSION} // PRODUCTION SCRIPT</strong></p>
+        <p>Generated: ${escapeHtml(new Date().toLocaleString())}</p>
+        <hr/>
 
-      <h2>AGENT D: FINAL SCRIPT</h2>
-    `;
+        <h2>AGENT D: FINAL SCRIPT</h2>
+      `;
 
-    const scriptBody = script.map(block => `
-      <div class="block">
-        <div class="time">${escapeHtml(block.timecode)} [${escapeHtml(block.blockType)}]</div>
-        <div class="visual">VISUAL: ${escapeHtml(block.visualCue)}</div>
+      const scriptBody = script.map(block => `
+        <div class="block">
+          <div class="time">${escapeHtml(block.timecode)} [${escapeHtml(block.blockType)}]</div>
+          <div class="visual">VISUAL: ${escapeHtml(block.visualCue)}</div>
 
-        ${block.imageUrl ? `
-          <div class="img-container">
-            <img class="storyboard" src="${escapeHtml(block.imageUrl)}" alt="Storyboard Frame" style="width: 600px; height: auto;" />
-          </div>
-        ` : ''}
+          ${block.imageUrl ? `
+            <div class="img-container">
+              <img class="storyboard" src="${escapeHtml(block.imageUrl)}" alt="Storyboard Frame" style="width: 600px; height: auto;" />
+            </div>
+          ` : ''}
 
-        <div class="audio">AUDIO (EN): ${escapeHtml(block.audioScript)}</div>
-        <div class="russian">AUDIO (RU): ${escapeHtml(block.russianScript)}</div>
-      </div>
-    `).join('');
+          <div class="audio">AUDIO (EN): ${escapeHtml(block.audioScript)}</div>
+          <div class="russian">AUDIO (RU): ${escapeHtml(block.russianScript)}</div>
+        </div>
+      `).join('');
 
-    const footer = "</div></body></html>";
-    const sourceHTML = header + scriptBody + footer;
-
-    downloadDoc(`SCRIPT_${safeFilename}.doc`, sourceHTML);
+      downloadDoc(`SCRIPT_${safeFilename}.doc`, header + scriptBody + '</div></body></html>');
+    } catch (e) {
+      setExportError(`Script export failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    }
   };
 
   const handleExportExcel = () => {
-    const headers = ["Timecode", "Block Type", "Visual Cue (Technical Task)", "Audio Script (EN)", "Audio Script (RU)"];
+    try {
+      setExportError(null);
+      const headers = ["Timecode", "Block Type", "Visual Cue (Technical Task)", "Audio Script (EN)", "Audio Script (RU)"];
 
-    const rows = script.map(block => {
-      const safeVisual = `"${block.visualCue.replace(/"/g, '""')}"`;
-      const safeAudio = `"${block.audioScript.replace(/"/g, '""')}"`;
-      const safeRussian = `"${(block.russianScript || '').replace(/"/g, '""')}"`;
-      return `${block.timecode},${block.blockType},${safeVisual},${safeAudio},${safeRussian}`;
-    });
+      const rows = script.map(block => {
+        const safeVisual = `"${block.visualCue.replace(/"/g, '""')}"`;
+        const safeAudio = `"${block.audioScript.replace(/"/g, '""')}"`;
+        const safeRussian = `"${(block.russianScript || '').replace(/"/g, '""')}"`;
+        return `${block.timecode},${block.blockType},${safeVisual},${safeAudio},${safeRussian}`;
+      });
 
-    const csvContent = [headers.join(','), ...rows].join('\n');
-    // BOM (\ufeff) ensures correct Cyrillic display in Excel (#21)
-    const blob = new Blob(['\ufeff', csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
+      const csvContent = [headers.join(','), ...rows].join('\n');
+      // BOM (\ufeff) ensures correct Cyrillic display in Excel (#21)
+      const blob = new Blob(['\ufeff', csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
 
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `TASK_${safeFilename}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `TASK_${safeFilename}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportError(`CSV export failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    }
   };
 
   return (
@@ -243,34 +279,64 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
       )}
 
       <div className="bg-mw-gray/20 rounded-lg overflow-hidden border border-mw-slate/30">
-         <div className="bg-mw-red/10 border-b border-mw-red/30 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-mw-red uppercase tracking-wider">
-              Final Generated Script
-            </h2>
-            <p className="text-xs text-mw-slate mt-1 font-mono">NARRATIVE.WAR V{APP_VERSION} // EXPORT_READY</p>
+        <div className="bg-mw-red/10 border-b border-mw-red/30 p-4 flex flex-col gap-3">
+          {/* Title row */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-mw-red uppercase tracking-wider">
+                Final Generated Script
+              </h2>
+              <p className="text-xs text-mw-slate mt-1 font-mono">
+                NARRATIVE.WAR V{APP_VERSION} // {script.length} BLOCKS // ~{estMinutes} MIN ({totalAudioChars.toLocaleString()} CHARS)
+                {totalAudioChars < MIN_AUDIO_CHARS && (
+                  <span className="text-yellow-400 ml-2">⚠ SHORT (min {MIN_AUDIO_CHARS.toLocaleString()})</span>
+                )}
+              </p>
+            </div>
+
+            {/* Generate All Images */}
+            {onGenerateImage && (
+              <button
+                onClick={handleGenAllImages}
+                disabled={generatingAll || script.every(b => b.imageUrl)}
+                className="flex items-center gap-2 px-4 py-2 bg-orange-900/40 hover:bg-orange-800/60 border border-orange-500/30 text-orange-200 rounded text-xs uppercase font-bold tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              >
+                {generatingAll
+                  ? `Generating... (${script.filter(b => b.imageUrl).length}/${script.length})`
+                  : `⚡ Gen All Images (${script.filter(b => !b.imageUrl).length} left)`
+                }
+              </button>
+            )}
           </div>
 
-          <div className="flex gap-2">
-             <button
-               onClick={handleExportDossierOnly}
-               className="flex items-center gap-2 px-4 py-2 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/30 text-blue-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
-             >
-               Dossier Only (.doc)
-             </button>
-             <button
-               onClick={handleExportScriptOnly}
-               className="flex items-center gap-2 px-4 py-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
-             >
-               Script Only (.doc)
-             </button>
-             <button
-               onClick={handleExportExcel}
-               className="flex items-center gap-2 px-4 py-2 bg-green-900/40 hover:bg-green-800/60 border border-green-500/30 text-green-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
-             >
-               Editor Task (.csv)
-             </button>
+          {/* Export buttons row */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleExportDossierOnly}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/30 text-blue-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
+            >
+              Dossier Only (.doc)
+            </button>
+            <button
+              onClick={handleExportScriptOnly}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
+            >
+              Script Only (.doc)
+            </button>
+            <button
+              onClick={handleExportExcel}
+              className="flex items-center gap-2 px-4 py-2 bg-green-900/40 hover:bg-green-800/60 border border-green-500/30 text-green-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
+            >
+              Editor Task (.csv)
+            </button>
           </div>
+
+          {/* Export error */}
+          {exportError && (
+            <p className="text-red-400 text-xs font-mono border border-red-500/30 bg-red-900/20 px-3 py-1 rounded">
+              ✕ {exportError}
+            </p>
+          )}
         </div>
 
         {/* Pagination controls */}

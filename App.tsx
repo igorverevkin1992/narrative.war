@@ -228,7 +228,7 @@ function App() {
             <div className={`bg-mw-gray/20 p-6 rounded border ${state.currentAgent === AgentType.RADAR ? 'border-mw-red shadow-[0_0_15px_rgba(220,38,38,0.2)]' : 'border-mw-slate/30'}`}>
               <h4 className="text-mw-red font-mono text-xs mb-2">/// RADAR_INTERCEPT_DATA</h4>
               {state.stepStatus === 'WAITING_FOR_APPROVAL' && state.currentAgent === AgentType.RADAR ? (
-                <StepEditor value={editedRadar} onChange={setEditedRadar} onApprove={() => pipeline.handleApproveRadar(editedRadar)} approveLabel="Approve &amp; Run Analyst →" borderColor="border-mw-red/50" textColor="text-gray-300" height="h-48" />
+                <StepEditor value={editedRadar} originalValue={state.radarOutput ?? ''} onChange={setEditedRadar} onApprove={() => pipeline.handleApproveRadar(editedRadar)} approveLabel="Approve &amp; Run Analyst →" borderColor="border-mw-red/50" textColor="text-gray-300" height="h-48" />
               ) : (
                 <RichTextDisplay content={state.radarOutput} />
               )}
@@ -240,7 +240,7 @@ function App() {
             <div className={`bg-mw-gray/20 p-6 rounded border ${state.currentAgent === AgentType.ANALYST ? 'border-mw-red shadow-[0_0_15px_rgba(220,38,38,0.2)]' : 'border-mw-slate/30'}`}>
               <h4 className="text-blue-400 font-mono text-xs mb-2">/// ANALYST_DOSSIER (TEXT)</h4>
               {state.stepStatus === 'WAITING_FOR_APPROVAL' && state.currentAgent === AgentType.ANALYST ? (
-                <StepEditor value={editedDossier} onChange={setEditedDossier} onApprove={() => pipeline.handleApproveAnalyst(editedDossier)} approveLabel="Approve &amp; Run Architect →" borderColor="border-blue-500/50" textColor="text-blue-100" />
+                <StepEditor value={editedDossier} originalValue={state.researchDossier ?? ''} onChange={setEditedDossier} onApprove={() => pipeline.handleApproveAnalyst(editedDossier)} approveLabel="Approve &amp; Run Architect →" borderColor="border-blue-500/50" textColor="text-blue-100" />
               ) : (
                 <RichTextDisplay content={state.researchDossier} />
               )}
@@ -252,7 +252,7 @@ function App() {
             <div className={`bg-mw-gray/20 p-6 rounded border ${state.currentAgent === AgentType.ARCHITECT ? 'border-mw-red shadow-[0_0_15px_rgba(220,38,38,0.2)]' : 'border-mw-slate/30'}`}>
               <h4 className="text-green-500 font-mono text-xs mb-2">/// ARCHITECT_BLUEPRINT</h4>
               {state.stepStatus === 'WAITING_FOR_APPROVAL' && state.currentAgent === AgentType.ARCHITECT ? (
-                <StepEditor value={editedStructure} onChange={setEditedStructure} onApprove={() => pipeline.handleApproveArchitect(editedStructure, state.researchDossier)} approveLabel="Approve &amp; Run Writer →" borderColor="border-green-500/50" textColor="text-green-100" />
+                <StepEditor value={editedStructure} originalValue={state.structureMap ?? ''} onChange={setEditedStructure} onApprove={() => pipeline.handleApproveArchitect(editedStructure, state.researchDossier)} approveLabel="Approve &amp; Run Writer →" borderColor="border-green-500/50" textColor="text-green-100" />
               ) : (
                 <RichTextDisplay content={state.structureMap} />
               )}

@@ -56,17 +56,33 @@ async function fetchHarrisStyle(topic: string): Promise<string> {
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+// Extracts HTTP status code from Gemini SDK error messages.
+// Pattern: "got status: UNAVAILABLE. {"error":{"code":503..."
+function getHttpStatus(err: unknown): number | null {
+  if (!(err instanceof Error)) return null;
+  const m = err.message.match(/"code"\s*:\s*(\d+)/);
+  return m ? parseInt(m[1]) : null;
+}
+
+async function withRetry<T>(fn: () => Promise<T>, label: string, signal?: AbortSignal): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= API_RETRY_COUNT; attempt++) {
+    if (signal?.aborted) throw new Error('Operation cancelled by user.');
     try {
       return await fn();
     } catch (err) {
+      if (signal?.aborted) throw new Error('Operation cancelled by user.');
       lastError = err;
+      const status = getHttpStatus(err);
+      // 400 Bad Request: no point retrying — the request itself is malformed.
+      if (status === 400) throw err;
       if (attempt < API_RETRY_COUNT) {
-        const waitMs = API_RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
-        logger.warn(`${label}: attempt ${attempt + 1} failed, retrying in ${waitMs}ms`, err);
-        await delay(waitMs);
+        // 429 Rate Limit: longer backoff + jitter to avoid thundering herd.
+        const base = status === 429
+          ? API_RETRY_BASE_DELAY_MS * Math.pow(2, attempt + 1) + Math.floor(Math.random() * 1000)
+          : API_RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+        logger.warn(`${label}: attempt ${attempt + 1} failed (HTTP ${status ?? 'unknown'}), retrying in ${base}ms`, err);
+        await delay(base);
       }
     }
   }
@@ -225,7 +241,7 @@ const getToolsForModel = (model: string) => {
   return undefined;
 };
 
-export const runScoutAgent = async (): Promise<TopicSuggestion[]> => {
+export const runScoutAgent = async (signal?: AbortSignal): Promise<TopicSuggestion[]> => {
   const model = AGENT_MODELS.SCOUT;
   return withRetry(async () => {
     const ai = getClient();
@@ -239,6 +255,7 @@ export const runScoutAgent = async (): Promise<TopicSuggestion[]> => {
       contents: AGENT_SCOUT_PROMPT,
       config: {
         tools,
+        abortSignal: signal,
         safetySettings: [
           { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
           { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,       threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -251,10 +268,10 @@ export const runScoutAgent = async (): Promise<TopicSuggestion[]> => {
     const text = extractResponseText(response, 'Scout');
     if (!text) throw new Error("Scout returned empty intel.");
     return extractJson<TopicSuggestion[]>(text, 'Scout');
-  }, 'runScoutAgent');
+  }, 'runScoutAgent', signal);
 };
 
-export const runRadarAgent = async (topic: string): Promise<string> => {
+export const runRadarAgent = async (topic: string, signal?: AbortSignal): Promise<string> => {
   const model = AGENT_MODELS.RADAR;
   return withRetry(async () => {
     const ai = getClient();
@@ -263,13 +280,14 @@ export const runRadarAgent = async (topic: string): Promise<string> => {
       contents: `TOPIC: ${topic}\n\n${AGENT_LENS_PROMPT}`,
       config: {
         temperature: 0.7,
+        abortSignal: signal,
       }
     });
     return response.text || "Lens Agent failed to acquire target.";
-  }, 'runRadarAgent');
+  }, 'runRadarAgent', signal);
 };
 
-export const runAnalystAgent = async (topic: string, radarAnalysis: string): Promise<ResearchDossier> => {
+export const runAnalystAgent = async (topic: string, radarAnalysis: string, signal?: AbortSignal): Promise<ResearchDossier> => {
   const model = AGENT_MODELS.ANALYST;
   return withRetry(async () => {
     const ai = getClient();
@@ -283,6 +301,7 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string): Pro
       contents: `TOPIC: ${topic}\n\nLENS ANALYSIS: ${radarAnalysis}\n\n${AGENT_RESEARCH_PROMPT}`,
       config: {
         tools,
+        abortSignal: signal,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -318,27 +337,32 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string): Pro
     const text = response.text;
     if (!text) throw new Error("Analyst returned empty data.");
     return safeJsonParse<ResearchDossier>(text, 'Analyst');
-  }, 'runAnalystAgent');
+  }, 'runAnalystAgent', signal);
 };
 
-export const runArchitectAgent = async (dossier: string): Promise<string> => {
+export const runArchitectAgent = async (dossier: string, signal?: AbortSignal): Promise<string> => {
   const model = AGENT_MODELS.ARCHITECT;
   return withRetry(async () => {
     const ai = getClient();
-    const dossierStr = dossier;
 
     const response = await ai.models.generateContent({
       model,
-      contents: `DOSSIER: ${dossierStr}\n\n${AGENT_ARCHITECT_PROMPT}`,
+      contents: `DOSSIER: ${dossier}\n\n${AGENT_ARCHITECT_PROMPT}`,
+      config: { abortSignal: signal },
     });
     return response.text || "Architect failed to build structure.";
-  }, 'runArchitectAgent');
+  }, 'runArchitectAgent', signal);
 };
 
 // Writer uses streaming to prevent ERR_CONNECTION_CLOSED on large responses.
-// Pro model + 60 blocks + bilingual text + thinking can take 2-3 min.
-// Streaming keeps the connection alive with incremental data chunks.
-export const runWriterAgent = async (structure: string, dossier: string): Promise<ScriptBlock[]> => {
+// Pro model + 60 blocks + bilingual text can take 2-3 min.
+// onProgress fires every 20 chunks so the UI can show activity.
+export const runWriterAgent = async (
+  structure: string,
+  dossier: string,
+  signal?: AbortSignal,
+  onProgress?: (chunks: number) => void,
+): Promise<ScriptBlock[]> => {
   const model = AGENT_MODELS.WRITER;
   return withRetry(async () => {
     const ai = getClient();
@@ -350,7 +374,7 @@ export const runWriterAgent = async (structure: string, dossier: string): Promis
     if (topicMatch) topicForStyle = topicMatch[1].trim();
 
     const styleContext = await fetchHarrisStyle(topicForStyle);
-    
+
     // Inject style into prompt
     const enhancedPrompt = `
       ${AGENT_SCRIPTWRITER_PROMPT}
@@ -362,7 +386,6 @@ export const runWriterAgent = async (structure: string, dossier: string): Promis
       ${styleContext ? `STYLE EXAMPLES FOR THIS TOPIC:\n${styleContext}` : "No style examples found. Default to cold, analytical Data-Noir tone."}
       ================================================
     `;
-    // --------------------------------------------------
 
     // thinkingConfig removed: gemini-3.x uses thinkingLevel (not thinkingBudget),
     // and mixing it with responseSchema + streaming causes immediate server disconnect.
@@ -373,6 +396,7 @@ export const runWriterAgent = async (structure: string, dossier: string): Promis
       config: {
         responseMimeType: "application/json",
         maxOutputTokens: 65536,
+        abortSignal: signal,
         responseSchema: {
           type: Type.ARRAY,
           items: {
@@ -393,9 +417,15 @@ export const runWriterAgent = async (structure: string, dossier: string): Promis
 
     // Collect all streamed chunks into the full JSON string
     let fullText = '';
+    let chunkCount = 0;
     for await (const chunk of response) {
+      if (signal?.aborted) throw new Error('Operation cancelled by user.');
       const part = chunk.text;
-      if (part) fullText += part;
+      if (part) {
+        fullText += part;
+        chunkCount++;
+        if (onProgress && chunkCount % 20 === 0) onProgress(chunkCount);
+      }
     }
 
     if (!fullText) throw new Error("Writer returned empty script.");

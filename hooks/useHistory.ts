@@ -55,9 +55,20 @@ export function useHistory(dispatch: Dispatch<Action>, addLog: (msg: string) => 
     script: ScriptBlock[],
     currentHistory: HistoryItem[]
   ): Promise<HistoryItem[]> => {
-    const savedEntry = await saveRunToHistory(topic, model, script);
-    return savedEntry ? [savedEntry, ...currentHistory] : currentHistory;
-  }, []);
+    try {
+      const savedEntry = await saveRunToHistory(topic, model, script);
+      if (!savedEntry) {
+        addLog('>>> WARNING: History save skipped (Supabase disabled).');
+        return currentHistory;
+      }
+      return [savedEntry, ...currentHistory];
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      addLog(`>>> ERROR: Failed to save history: ${message}`);
+      dispatch({ type: 'MERGE', partial: { lastError: `History not saved. ${message}` } });
+      return currentHistory;
+    }
+  }, [dispatch, addLog]);
 
   return { loadHistoryFromServer, loadFromHistory, handleDeleteHistory, saveToHistory };
 }

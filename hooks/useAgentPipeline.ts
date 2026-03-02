@@ -7,7 +7,7 @@ import {
   runWriterAgent,
   generateImageForBlock,
 } from '../services/geminiService';
-import { AgentType, SystemState, TopicSuggestion, ResearchDossier, ScriptBlock } from '../types';
+import { AgentType, SystemState, TopicSuggestion, ResearchDossier, ScriptBlock, HistoryItem } from '../types';
 import { Action } from '../store/reducer';
 import { AGENT_MODELS } from '../constants';
 
@@ -57,8 +57,8 @@ interface PipelineOptions {
     topic: string,
     model: string,
     script: ScriptBlock[],
-    currentHistory: typeof state.history
-  ) => Promise<typeof state.history>;
+    currentHistory: HistoryItem[]
+  ) => Promise<HistoryItem[]>;
   // Steppable mode edit state setters
   setEditedRadar: (v: string) => void;
   setEditedDossier: (v: string) => void;
@@ -99,11 +99,21 @@ export function useAgentPipeline({
 
     const script = await runStep(
       AgentType.WRITER,
-      () => runWriterAgent(inputStructure, inputDossier),
+      () => runWriterAgent(inputStructure, inputDossier, controller.signal, (chunks) => {
+        if (chunks % 20 === 0) addLog(`>>> WRITER: Streaming... (${chunks} chunks received)`);
+      }),
       dispatch, addLog, controller,
       () => {}
     );
     if (!script) return;
+
+    // Validate minimum script length (12 min = 10,800 chars at 15 chars/sec)
+    const totalChars = script.reduce((sum, b) => sum + (b.audioScript?.length ?? 0), 0);
+    const estMin = (totalChars / 900).toFixed(1);
+    addLog(`>>> SCRIPT: ${script.length} blocks, ~${estMin} min (${totalChars.toLocaleString()} chars).`);
+    if (totalChars < 10800) {
+      addLog(`>>> WARNING: Script is short (${totalChars} chars). Min 10,800 for 12 min. Consider re-running.`);
+    }
 
     addLog('>>> SCRIPT GENERATED.');
     const { topic, history } = stateRef.current;
@@ -129,7 +139,7 @@ export function useAgentPipeline({
 
     const structure = await runStep(
       AgentType.ARCHITECT,
-      () => runArchitectAgent(inputDossier),
+      () => runArchitectAgent(inputDossier, controller.signal),
       dispatch, addLog, controller,
       () => {}
     );
@@ -156,7 +166,7 @@ export function useAgentPipeline({
 
     const dossier = await runStep(
       AgentType.ANALYST,
-      () => runAnalystAgent(stateRef.current.topic, inputRadar),
+      () => runAnalystAgent(stateRef.current.topic, inputRadar, controller.signal),
       dispatch, addLog, controller,
       () => {}
     );
@@ -192,7 +202,7 @@ export function useAgentPipeline({
 
     const radarOutput = await runStep(
       AgentType.RADAR,
-      () => runRadarAgent(fullContext ?? activeTopic),
+      () => runRadarAgent(fullContext ?? activeTopic, controller.signal),
       dispatch, addLog, controller,
       () => {}
     );
@@ -219,7 +229,7 @@ export function useAgentPipeline({
 
     const suggestions = await runStep(
       AgentType.SCOUT,
-      runScoutAgent,
+      () => runScoutAgent(controller.signal),
       dispatch, addLog, controller,
       (result: TopicSuggestion[]) => {
         addLog(`>>> SCOUT REPORT: ${result.length} TARGETS IDENTIFIED.`);
