@@ -217,7 +217,9 @@ const calculateDurationAndRetiming = (script: ScriptBlock[]): ScriptBlock[] => {
 // Models are hardcoded per agent via AGENT_MODELS (constants.ts)
 
 const getToolsForModel = (model: string) => {
-  if (model.includes('gemini-3')) {
+  // googleSearch grounding only works reliably on Flash models.
+  // Pro models (gemini-3.1-pro-preview) disconnect immediately when googleSearch is included.
+  if (model.includes('flash')) {
     return [{ googleSearch: {} }];
   }
   return undefined;
