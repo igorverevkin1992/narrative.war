@@ -81,16 +81,23 @@ async def gemini_proxy(path: str, request: Request):
     if is_stream:
         async def stream_generator():
             # Client must live inside the generator — it outlives the route handler
-            async with httpx.AsyncClient(timeout=300.0) as stream_client:
-                async with stream_client.stream(
-                    "POST",
-                    target_url,
-                    content=body,
-                    params=params,
-                    headers={"Content-Type": "application/json"},
-                ) as resp:
-                    async for chunk in resp.aiter_bytes():
-                        yield chunk
+            try:
+                async with httpx.AsyncClient(timeout=300.0) as stream_client:
+                    async with stream_client.stream(
+                        "POST",
+                        target_url,
+                        content=body,
+                        params=params,
+                        headers={"Content-Type": "application/json"},
+                    ) as resp:
+                        async for chunk in resp.aiter_bytes():
+                            yield chunk
+            except httpx.RemoteProtocolError as e:
+                print(f"❌ Gemini stream disconnected: {e}")
+                yield b'{"error": "Gemini disconnected before sending response"}'
+            except Exception as e:
+                print(f"❌ Gemini stream error: {type(e).__name__}: {e}")
+                yield b'{"error": "Proxy streaming error"}'
 
         return StreamingResponse(stream_generator(), media_type="application/json")
     else:

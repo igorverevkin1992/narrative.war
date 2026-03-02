@@ -338,9 +338,8 @@ export const runWriterAgent = async (structure: string, dossier: string): Promis
     `;
     // --------------------------------------------------
 
-    const thinkingConfig = (model.includes('gemini-3') || model.includes('gemini-2.5'))
-      ? { thinkingBudget: 8192 }
-      : undefined;
+    // thinkingConfig removed: gemini-3.x uses thinkingLevel (not thinkingBudget),
+    // and mixing it with responseSchema + streaming causes immediate server disconnect.
 
     const response = await ai.models.generateContentStream({
       model,
@@ -348,7 +347,6 @@ export const runWriterAgent = async (structure: string, dossier: string): Promis
       config: {
         responseMimeType: "application/json",
         maxOutputTokens: 65536,
-        thinkingConfig,
         responseSchema: {
           type: Type.ARRAY,
           items: {
