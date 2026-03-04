@@ -229,6 +229,33 @@ const calculateDurationAndRetiming = (script: ScriptBlock[]): ScriptBlock[] => {
   });
 };
 
+// --- INTERNAL STRUCTURED TYPES FOR RADAR + ARCHITECT ---
+// These are not exported — RADAR/ARCHITECT still return `string` to the pipeline.
+// Using responseSchema forces the model to output valid JSON; we then format to readable text.
+
+interface RadarHypothesis { theory: string; proof: string; }
+interface RadarAnalysis   { strategicOverview: string; hypotheses: RadarHypothesis[]; }
+interface ArchitectBlock  { block: string; timecode: string; description: string; }
+interface ArchitectPlan   { title: string; thumbnailConcept: string; visualAnchor: string; structure: ArchitectBlock[]; }
+
+function formatRadarOutput(r: RadarAnalysis): string {
+  let out = `STRATEGIC OVERVIEW:\n${r.strategicOverview}\n\n/// VIDEO HYPOTHESES`;
+  r.hypotheses.forEach((h, i) => {
+    out += `\n\nHYPOTHESIS ${i + 1}:\nTHEORY: ${h.theory}\nPROOF:  ${h.proof}`;
+  });
+  return out;
+}
+
+function formatArchitectOutput(p: ArchitectPlan): string {
+  let out = `=== PACKAGING PLAN ===\nTITLE: ${p.title}\nTHUMBNAIL: ${p.thumbnailConcept}\n\n`;
+  out += `=== VISUAL ANCHOR (Opening 5 seconds) ===\n${p.visualAnchor}\n\n`;
+  out += `=== STRUCTURAL BREAKDOWN ===`;
+  p.structure.forEach((s, i) => {
+    out += `\n\n${i + 1}. ${s.block} (${s.timecode})\n   ${s.description}`;
+  });
+  return out;
+}
+
 // --- AGENT FUNCTIONS ---
 // Models are hardcoded per agent via AGENT_MODELS (constants.ts)
 
@@ -281,9 +308,31 @@ export const runRadarAgent = async (topic: string, signal?: AbortSignal): Promis
       config: {
         temperature: 0.7,
         abortSignal: signal,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            strategicOverview: { type: Type.STRING },
+            hypotheses: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  theory: { type: Type.STRING },
+                  proof:  { type: Type.STRING },
+                },
+                required: ["theory", "proof"],
+              },
+            },
+          },
+          required: ["strategicOverview", "hypotheses"],
+        },
       }
     });
-    return response.text || "Lens Agent failed to acquire target.";
+    const text = response.text;
+    if (!text) throw new Error("Radar returned empty analysis.");
+    const parsed = safeJsonParse<RadarAnalysis>(text, 'Radar');
+    return formatRadarOutput(parsed);
   }, 'runRadarAgent', signal);
 };
 
@@ -348,9 +397,36 @@ export const runArchitectAgent = async (dossier: string, signal?: AbortSignal): 
     const response = await ai.models.generateContent({
       model,
       contents: `DOSSIER: ${dossier}\n\n${AGENT_ARCHITECT_PROMPT}`,
-      config: { abortSignal: signal },
+      config: {
+        abortSignal: signal,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title:            { type: Type.STRING },
+            thumbnailConcept: { type: Type.STRING },
+            visualAnchor:     { type: Type.STRING },
+            structure: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  block:       { type: Type.STRING },
+                  timecode:    { type: Type.STRING },
+                  description: { type: Type.STRING },
+                },
+                required: ["block", "timecode", "description"],
+              },
+            },
+          },
+          required: ["title", "thumbnailConcept", "visualAnchor", "structure"],
+        },
+      },
     });
-    return response.text || "Architect failed to build structure.";
+    const text = response.text;
+    if (!text) throw new Error("Architect failed to build structure.");
+    const parsed = safeJsonParse<ArchitectPlan>(text, 'Architect');
+    return formatArchitectOutput(parsed);
   }, 'runArchitectAgent', signal);
 };
 

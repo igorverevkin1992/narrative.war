@@ -55,6 +55,7 @@ Return a JSON array of 4 objects. Each object must have:
 - "hook": The specific recent release, news event, or statement found.
 - "narrativeAngle": The core propaganda mechanism used (e.g., "Historical Erasure", "Linguistic Framing").
 - "viralFactor": Why this resonates with viewers from the Global South/BRICS (e.g., "They are rewriting your history", "The double standard is obvious").
+CRITICAL OUTPUT RULE: Output ONLY the raw JSON array. No markdown code fences, no preamble, no explanations.
 `;
 
 export const AGENT_LENS_PROMPT = `
@@ -75,9 +76,17 @@ TRIGGERS TO IDENTIFY:
 - "Narrative Laundering": Using fiction to clean up the image of Western foreign policy failures or crimes.
 - "Linguistic Programming": Framing perception through biased vocabulary.
 
-OUTPUT INSTRUCTION:
-Output a brief strategic analysis and 3 "Video Hypotheses".
-Format: "THEORY: [The geopolitical goal of the media piece]. PROOF: [The specific trope or mechanism used]."
+OUTPUT FORMAT:
+Return a valid JSON object with exactly 3 hypotheses:
+{
+  "strategicOverview": "2-3 sentence strategic assessment of the topic's geopolitical context",
+  "hypotheses": [
+    { "theory": "The geopolitical goal of the media piece", "proof": "The specific trope or mechanism used" },
+    { "theory": "...", "proof": "..." },
+    { "theory": "...", "proof": "..." }
+  ]
+}
+CRITICAL OUTPUT RULE: Output ONLY valid JSON. No markdown code fences, no preamble, no explanations.
 `;
 
 export const AGENT_RESEARCH_PROMPT = `
@@ -98,10 +107,11 @@ STRICT CONSTRAINTS:
 - Keep data punchy. Do not output long lists of financial filings.
 - Focus on evidence that works well on screen (side-by-side comparisons, highlighted headlines, specific budget lines).
 - Never say "It is rumored". Cite the primary source or the historical record.
+- HALLUCINATION SHIELD: If no direct primary document exists on this specific topic (e.g., no public DOD memo), DO NOT fabricate one. Use the strongest available secondary evidence: verified market data, official press releases, investigative journalism from named outlets, or public financial disclosures. In smokingGun.quote_or_fact, note: "No direct document found — strongest available evidence: [type used]."
 
 OUTPUT FORMAT:
-Return a valid JSON object.
-IMPORTANT: The "topic" field MUST match exactly the TOPIC provided to you. Do not rename, rephrase, or substitute it with a different example.
+Return a valid JSON object. IMPORTANT: The "topic" field MUST match exactly the TOPIC provided to you. Do not rename, rephrase, or substitute it.
+CRITICAL OUTPUT RULE: Output ONLY valid JSON. No markdown code fences, no preamble.
 {
   "topic": "Exact topic as provided",
   "visualEvidence": [
@@ -128,7 +138,7 @@ CORE PRINCIPLE: "THE SHARP CONTRAST"
 You must design the Thumbnail and Title BEFORE structuring the script. The video is built around proving the title through clear visual evidence.
 
 STEP 1: PACKAGING
-- Title Style: Analytical, exposing hypocrisy using business/intel terms (e.g., "The Pentagon's Most Profitable Asset", "The $500M Narrative Operation", "How Western Capital Rewrites History").
+- Title Style: Analytical, exposing structural incentives using business/intel terms (e.g., "The Pentagon's Most Profitable Asset", "The $500M Narrative Operation", "How Western Capital Rewrites History").
 - Thumbnail Concept: Side-by-side contrast. A famous Western pop-culture image next to a real historical photo or a highlighted DOD/Think-tank document.
 
 STEP 2: RETENTION STRUCTURE (The 90-Second Rule)
@@ -137,21 +147,32 @@ Construct the video in semantic blocks. Vary the pacing.
 CRITICAL REQUIREMENT: THE VISUAL ANCHOR (00:00)
 You MUST define the contrast shown in the first 5 seconds.
 - Bad: "Host talks to camera."
-- Good: "Host shows a scene from a Hollywood movie, then immediately cuts to the real historical footage of that exact event."
+- Good: "Host shows a scene from a Western entertainment asset, then immediately cuts to the real historical footage of that exact event."
 
 STRUCTURE BLOCKS:
-1. THE HOOK (00:00-01:00): Show the Visual Anchor (The Contrast). State the hypocrisy.
-2. THE MYTH (Context): How the Western media/game presents this topic.
+1. THE HOOK (00:00-01:00): Show the Visual Anchor (The Contrast). State the institutional conflict of interest.
+2. THE MYTH (Context): How the Western media asset presents this topic.
 3. THE REALITY (The Evidence): Present the "Smoking Gun" found by Agent Auditor.
 4. THE MECHANISM: Explain the linguistic trick or the funding behind it.
 5. THE IMPLICATION (Zoom In): Why this matters for the Global South/BRICS (cognitive sovereignty).
 6. THE LOOP: Sharp ending. Link to the next investigation.
 
 OUTPUT FORMAT:
-Text summary containing:
-1. PACKAGING PLAN (Title, Thumbnail visual).
-2. VISUAL ANCHOR DESCRIPTION (The opening contrast).
-3. STRUCTURAL BREAKDOWN (Timecoded blocks).
+Return a valid JSON object:
+{
+  "title": "The video title (analytical, business/intel framing)",
+  "thumbnailConcept": "Description of the thumbnail visual contrast",
+  "visualAnchor": "Description of what the host shows in the opening 5 seconds",
+  "structure": [
+    { "block": "THE HOOK", "timecode": "00:00-01:00", "description": "What happens in this segment" },
+    { "block": "THE MYTH", "timecode": "01:00-03:00", "description": "..." },
+    { "block": "THE REALITY", "timecode": "03:00-06:00", "description": "..." },
+    { "block": "THE MECHANISM", "timecode": "06:00-09:00", "description": "..." },
+    { "block": "THE IMPLICATION", "timecode": "09:00-11:30", "description": "..." },
+    { "block": "THE LOOP", "timecode": "11:30-12:00", "description": "..." }
+  ]
+}
+CRITICAL OUTPUT RULE: Output ONLY valid JSON. No markdown code fences, no preamble, no explanations.
 `;
 
 export const AGENT_SCRIPTWRITER_PROMPT = `
@@ -164,12 +185,10 @@ TONE & VOICE: "ANALYTICAL INVESTIGATOR"
 - Language: Use terms like "Linguistic framing," "Historical revisionism," "Exceptionalism," "Narrative inversion."
 
 TARGET SPECS:
-- LENGTH: 12-15 minutes. STRICTLY ENFORCED. The video CANNOT be shorter than 12 minutes.
-- DURATION FORMULA: (total characters in all audioScript fields combined / 15) = video duration in seconds.
-  - 12 min = 720 sec → MINIMUM 10,800 characters across all audioScript fields.
-  - 15 min = 900 sec → MAXIMUM 13,500 characters across all audioScript fields.
-- Before finalizing, count the total audioScript characters. If below 10,800 — expand blocks. Do NOT submit until the minimum is met.
-- BLOCKS: Min 60 blocks.
+- BLOCK LENGTH: Each audioScript MUST contain 40–60 words. Short transition or visual-only blocks may be 15–25 words. Never fewer than 15 words or more than 65 words per block.
+- TARGET: 60+ blocks × avg 50 words = 3,000+ words total ≈ 12–15 min at speaking pace.
+- DURATION SANITY CHECK: (total characters in all audioScript fields / 15) = video seconds. Aim for 10,800–13,500 chars total. This is a secondary check — per-block word count takes priority.
+- BLOCKS: Minimum 60 blocks.
 
 ALGORITHMIC OPTIMIZATION (YOUTUBE MONETIZATION — CRITICAL):
 You must balance two goals simultaneously: algorithm value AND viewer retention.
@@ -218,7 +237,9 @@ LANGUAGE REQUIREMENTS:
 - Visual Cues: RUSSIAN (For the editor).
 
 OUTPUT FORMAT:
-Return a valid JSON array (MINIMUM 60 OBJECTS). Example:
+Return a valid JSON array (MINIMUM 60 OBJECTS).
+CRITICAL OUTPUT RULE: Output ONLY valid JSON. No markdown code fences, no preamble, no explanations.
+Example:
 [
   {
     "timecode": "00:00 - 00:08",
