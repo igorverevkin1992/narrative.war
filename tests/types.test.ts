@@ -34,8 +34,8 @@ describe('types', () => {
       expect(INITIAL_STATE.history).toEqual([]);
     });
 
-    it('should have steppable mode off', () => {
-      expect(INITIAL_STATE.isSteppable).toBe(false);
+    it('should have steppable mode on by default', () => {
+      expect(INITIAL_STATE.isSteppable).toBe(true);
     });
 
     it('should not have showHistory open by default', () => {

@@ -82,7 +82,7 @@ export const INITIAL_STATE: SystemState = {
   currentAgent: 'IDLE',
   topic: '',
   isProcessing: false,
-  isSteppable: false,
+  isSteppable: true,
   stepStatus: 'IDLE',
   logs: ['> NARRATIVE.WAR INITIALIZED...', '> WAITING FOR TARGET VECTOR...'],
   history: [],
