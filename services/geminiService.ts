@@ -518,7 +518,7 @@ export const runWriterAgent = async (
   }, 'runWriterAgent');
 };
 
-// --- DOCUMENTARY: PER-ACT WRITER (non-streaming, ~20-25 blocks per call) ---
+// --- DOCUMENTARY: PER-ACT WRITER (streaming, ~20-25 blocks per call) ---
 export const runDocumentaryActWriter = async (
   act: { block: string; timecode: string; description: string },
   allActs: { block: string; timecode: string; description: string }[],
@@ -527,8 +527,8 @@ export const runDocumentaryActWriter = async (
   signal?: AbortSignal,
 ): Promise<ScriptBlock[] | null> => {
   const model = AGENT_MODELS.WRITER;
-  const ai = getClient();
 
+  // Fetch style context before the retry loop (avoid redundant RAG calls on retry)
   const topicQuery = `${act.block} ${act.description}`.substring(0, 200);
   const styleContext = await fetchHarrisStyle(topicQuery, 6);
 
@@ -542,41 +542,26 @@ export const runDocumentaryActWriter = async (
 
   const contents = `FULL DOCUMENTARY STRUCTURE:\n${structureSummary}\n\nCURRENT ACT TO WRITE:\n${act.block} [${act.timecode}]\n${act.description}${prevContext}\n\nRESEARCH DOSSIER:\n${dossier}\n\n${AGENT_DOCUMENTARY_WRITER_PROMPT}\n\n${styleContext ? `=== STYLE REFERENCE: HARRIS/KOZYRA DATA-NOIR ===\n${styleContext}\n================================================` : ''}`;
 
-  try {
-    const response = await ai.models.generateContent({
+  return withRetry(async () => {
+    const ai = getClient();
+    const stream = await ai.models.generateContentStream({
       model,
       contents,
       config: {
         abortSignal: signal,
         responseMimeType: "application/json",
-        maxOutputTokens: 32768,
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              timecode:      { type: Type.STRING },
-              visualCue:     { type: Type.STRING },
-              overlayFX:     { type: Type.STRING },
-              audioScript:   { type: Type.STRING },
-              russianScript: { type: Type.STRING },
-              blockType:     { type: Type.STRING, enum: ['HOOK', 'INTRO', 'BODY', 'TRANSITION', 'SALES', 'OUTRO'] }
-            },
-            required: ["timecode", "visualCue", "overlayFX", "audioScript", "russianScript", "blockType"]
-          }
-        }
       }
     });
 
-    const text = response.text;
-    if (!text) return null;
-    return safeJsonParse<ScriptBlock[]>(text, `DocWriter ${act.block}`);
-  } catch (e: unknown) {
-    if (signal?.aborted) return null;
-    const message = e instanceof Error ? e.message : String(e);
-    logger.error(`Documentary act writer failed: ${act.block}`, { message });
-    return null;
-  }
+    let fullText = '';
+    for await (const chunk of stream) {
+      if (signal?.aborted) return null;
+      fullText += chunk.text ?? '';
+    }
+
+    if (!fullText) throw new Error(`DocWriter ${act.block}: empty response`);
+    return safeJsonParse<ScriptBlock[]>(fullText, `DocWriter ${act.block}`);
+  }, `runDocumentaryActWriter:${act.block}`, signal);
 };
 
 export const generateImageForBlock = async (prompt: string): Promise<string | null> => {
