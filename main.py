@@ -110,7 +110,10 @@ async def gemini_proxy(path: str, request: Request):
                     headers={"Content-Type": "application/json"},
                 )
                 print(f"🔍 Gemini {resp.status_code} for {path.split('/')[-1]} | body[:300]: {resp.text[:300]}")
-                return resp.json()
+                try:
+                    return resp.json()
+                except Exception:
+                    raise HTTPException(status_code=502, detail=f"Gemini returned non-JSON (status {resp.status_code})")
         except httpx.RemoteProtocolError as e:
             print(f"❌ Gemini disconnected (non-stream): {e}")
             raise HTTPException(status_code=503, detail="Gemini disconnected before sending response. Retry.")

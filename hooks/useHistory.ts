@@ -14,6 +14,7 @@ export function useHistory(dispatch: Dispatch<Action>, addLog: (msg: string) => 
       const message = err instanceof Error ? err.message : String(err);
       logger.error('Failed to load history', message);
       addLog(`ERROR: Could not load history: ${message}`);
+      dispatch({ type: 'MERGE', partial: { lastError: `Could not load history: ${message}` } });
     }
   }, [dispatch, addLog]);
 
@@ -46,6 +47,7 @@ export function useHistory(dispatch: Dispatch<Action>, addLog: (msg: string) => 
     } else {
       dispatch({ type: 'SET_HISTORY', history: previousHistory });
       addLog(`>>> ERROR: COULD NOT DELETE ARCHIVE ID ${id}.`);
+      dispatch({ type: 'MERGE', partial: { lastError: `Could not delete archive ID ${id}. Reverted.` } });
     }
   }, [dispatch, addLog]);
 

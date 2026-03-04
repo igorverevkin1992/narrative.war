@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ScriptBlock } from '../types';
 import { APP_VERSION, CHARS_PER_SECOND } from '../constants';
 
@@ -37,6 +37,11 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   const [loadingImages, setLoadingImages] = useState<number[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [page]);
   const [exportError, setExportError] = useState<string | null>(null);
   const [generatingAll, setGeneratingAll] = useState(false);
 
@@ -373,7 +378,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div ref={tableRef} className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-mw-black text-xs uppercase tracking-wider text-mw-slate border-b border-mw-slate/50">

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 interface ErrorToastProps {
   message: string;
@@ -6,10 +6,13 @@ interface ErrorToastProps {
 }
 
 const ErrorToast: React.FC<ErrorToastProps> = ({ message, onClose }) => {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
-    const timer = setTimeout(onClose, 7000);
+    const timer = setTimeout(() => onCloseRef.current(), 7000);
     return () => clearTimeout(timer);
-  }, [message, onClose]);
+  }, [message]);
 
   return (
     <div className="fixed bottom-6 right-6 z-[200] max-w-md bg-red-950 border border-mw-red rounded-lg p-4 shadow-[0_0_20px_rgba(220,38,38,0.4)] flex items-start gap-3 animate-in slide-in-from-right">

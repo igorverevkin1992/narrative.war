@@ -112,7 +112,9 @@ export function useAgentPipeline({
     const estMin = (totalChars / 900).toFixed(1);
     addLog(`>>> SCRIPT: ${script.length} blocks, ~${estMin} min (${totalChars.toLocaleString()} chars).`);
     if (totalChars < 10800) {
-      addLog(`>>> WARNING: Script is short (${totalChars} chars). Min 10,800 for 12 min. Consider re-running.`);
+      const warning = `Script too short: ${script.length} blocks / ~${estMin} min. Min is 12 min. Consider re-running Writer.`;
+      addLog(`>>> WARNING: ${warning}`);
+      dispatch({ type: 'MERGE', partial: { lastError: warning } });
     }
 
     addLog('>>> SCRIPT GENERATED.');
