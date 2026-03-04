@@ -48,6 +48,10 @@ export interface HistoryItem {
   created_at: string;
   topic: string;
   model: string;
+  radar_output?: string;
+  research_dossier?: string;
+  structure_map?: string;
+  thumbnail_concept?: string;
   script: ScriptBlock[];
 }
 
@@ -66,7 +70,11 @@ export interface SystemState {
   radarOutput?: string; // Potential viral topics
   researchDossier?: string; // Always stored as formatted string
   structureMap?: string; // 5-block structure plan
+  thumbnailConcept?: string; // Extracted from Architect output
   finalScript?: ScriptBlock[];
+
+  // Preview
+  previewImageUrl?: string;
 
   // Error surfacing
   lastError?: string;

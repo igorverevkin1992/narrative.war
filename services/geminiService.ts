@@ -389,7 +389,7 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string, sign
   }, 'runAnalystAgent', signal);
 };
 
-export const runArchitectAgent = async (dossier: string, signal?: AbortSignal): Promise<string> => {
+export const runArchitectAgent = async (dossier: string, signal?: AbortSignal): Promise<{ structure: string; thumbnailConcept: string }> => {
   const model = AGENT_MODELS.ARCHITECT;
   return withRetry(async () => {
     const ai = getClient();
@@ -426,7 +426,7 @@ export const runArchitectAgent = async (dossier: string, signal?: AbortSignal): 
     const text = response.text;
     if (!text) throw new Error("Architect failed to build structure.");
     const parsed = safeJsonParse<ArchitectPlan>(text, 'Architect');
-    return formatArchitectOutput(parsed);
+    return { structure: formatArchitectOutput(parsed), thumbnailConcept: parsed.thumbnailConcept };
   }, 'runArchitectAgent', signal);
 };
 
@@ -536,6 +536,40 @@ export const generateImageForBlock = async (prompt: string): Promise<string | nu
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error("Image generation failed", { message, prompt: prompt.substring(0, 80) });
+    return null;
+  }
+};
+
+export const generatePreviewImage = async (
+  referenceBase64: string,
+  mimeType: string,
+  thumbnailConcept: string
+): Promise<string | null> => {
+  const ai = getClient();
+  try {
+    const response = await ai.models.generateContent({
+      model: IMAGE_GEN_MODEL,
+      contents: [
+        { inlineData: { mimeType, data: referenceBase64 } },
+        { text: `Create a YouTube thumbnail in 16:9 format based on this reference image. Concept: ${thumbnailConcept}. Style: cinematic, high contrast, bold composition, professional quality.` },
+      ] as never,
+      config: {
+        imageConfig: { aspectRatio: "16:9" }
+      }
+    });
+
+    const parts = response.candidates?.[0]?.content?.parts;
+    if (!parts) return null;
+
+    for (const part of parts) {
+      if (part.inlineData) {
+        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      }
+    }
+    return null;
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error("Preview generation failed", { message });
     return null;
   }
 };

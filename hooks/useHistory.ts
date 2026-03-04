@@ -23,14 +23,17 @@ export function useHistory(dispatch: Dispatch<Action>, addLog: (msg: string) => 
       type: 'MERGE', partial: {
         topic: item.topic,
         finalScript: item.script,
+        radarOutput: item.radar_output,
+        researchDossier: item.research_dossier,
+        structureMap: item.structure_map,
+        thumbnailConcept: item.thumbnail_concept,
         currentAgent: AgentType.COMPLETED,
-        researchDossier: undefined,
-        radarOutput: undefined,
         scoutSuggestions: undefined,
+        previewImageUrl: undefined,
         showHistory: false,
       }
     });
-    addLog(`>>> LOADED ARCHIVE ID: ${item.id} [${item.topic}]`);
+    addLog(`>>> LOADED PROJECT: ${item.id} [${item.topic}]`);
   }, [dispatch, addLog]);
 
   const handleDeleteHistory = useCallback(async (
@@ -55,19 +58,23 @@ export function useHistory(dispatch: Dispatch<Action>, addLog: (msg: string) => 
     topic: string,
     model: string,
     script: ScriptBlock[],
-    currentHistory: HistoryItem[]
+    currentHistory: HistoryItem[],
+    radarOutput?: string,
+    researchDossier?: string,
+    structureMap?: string,
+    thumbnailConcept?: string,
   ): Promise<HistoryItem[]> => {
     try {
-      const savedEntry = await saveRunToHistory(topic, model, script);
+      const savedEntry = await saveRunToHistory(topic, model, script, radarOutput, researchDossier, structureMap, thumbnailConcept);
       if (!savedEntry) {
-        addLog('>>> WARNING: History save skipped (Supabase disabled).');
+        addLog('>>> WARNING: Project save skipped (Supabase disabled).');
         return currentHistory;
       }
       return [savedEntry, ...currentHistory];
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      addLog(`>>> ERROR: Failed to save history: ${message}`);
-      dispatch({ type: 'MERGE', partial: { lastError: `History not saved. ${message}` } });
+      addLog(`>>> ERROR: Failed to save project: ${message}`);
+      dispatch({ type: 'MERGE', partial: { lastError: `Project not saved. ${message}` } });
       return currentHistory;
     }
   }, [dispatch, addLog]);

@@ -6,6 +6,7 @@ import {
   runArchitectAgent,
   runWriterAgent,
   generateImageForBlock,
+  generatePreviewImage,
 } from '../services/geminiService';
 import { AgentType, SystemState, TopicSuggestion, ResearchDossier, ScriptBlock, HistoryItem } from '../types';
 import { Action } from '../store/reducer';
@@ -57,7 +58,11 @@ interface PipelineOptions {
     topic: string,
     model: string,
     script: ScriptBlock[],
-    currentHistory: HistoryItem[]
+    currentHistory: HistoryItem[],
+    radarOutput?: string,
+    researchDossier?: string,
+    structureMap?: string,
+    thumbnailConcept?: string,
   ) => Promise<HistoryItem[]>;
   // Steppable mode edit state setters
   setEditedRadar: (v: string) => void;
@@ -118,8 +123,8 @@ export function useAgentPipeline({
     }
 
     addLog('>>> SCRIPT GENERATED.');
-    const { topic, history } = stateRef.current;
-    const updatedHistory = await saveToHistory(topic, AGENT_MODELS.WRITER, script, history);
+    const { topic, history, radarOutput, researchDossier, structureMap, thumbnailConcept } = stateRef.current;
+    const updatedHistory = await saveToHistory(topic, AGENT_MODELS.WRITER, script, history, radarOutput, researchDossier, structureMap, thumbnailConcept);
 
     dispatch({
       type: 'MERGE', partial: {
@@ -139,19 +144,21 @@ export function useAgentPipeline({
     dispatch({ type: 'MERGE', partial: { researchDossier: inputDossier } });
     addLog('>>> ACTIVATING AGENT C: THE ARCHITECT...');
 
-    const structure = await runStep(
+    const result = await runStep(
       AgentType.ARCHITECT,
       () => runArchitectAgent(inputDossier, controller.signal),
       dispatch, addLog, controller,
       () => {}
     );
-    if (!structure) return;
+    if (!result) return;
 
+    const { structure, thumbnailConcept } = result;
     addLog('>>> STRUCTURE LOCKED.');
     const isSteppable = stateRef.current.isSteppable;
     dispatch({
       type: 'MERGE', partial: {
         structureMap: structure,
+        thumbnailConcept,
         isProcessing: !isSteppable,
         stepStatus: isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING',
       }
@@ -255,6 +262,22 @@ export function useAgentPipeline({
     }
   }, [dispatch, addLog]);
 
+  // ── PREVIEW IMAGE GENERATION ────────────────────────────────────────────────
+  const handlePreviewGen = useCallback(async (referenceBase64: string, mimeType: string) => {
+    const { thumbnailConcept } = stateRef.current;
+    if (!thumbnailConcept) return;
+    addLog('>>> GENERATING THUMBNAIL PREVIEW...');
+    const url = await generatePreviewImage(referenceBase64, mimeType, thumbnailConcept);
+    if (url) {
+      dispatch({ type: 'MERGE', partial: { previewImageUrl: url } });
+      addLog('>>> THUMBNAIL PREVIEW GENERATED.');
+    } else {
+      const error = 'Preview generation failed. Check console.';
+      addLog(`>>> ERROR: ${error}`);
+      dispatch({ type: 'MERGE', partial: { lastError: error } });
+    }
+  }, [dispatch, addLog]);
+
   // ── STEPPABLE APPROVE HANDLERS ──────────────────────────────────────────────
   const handleApproveRadar = useCallback((editedRadar: string) => {
     executeAnalyst(editedRadar);
@@ -289,6 +312,7 @@ export function useAgentPipeline({
     executeArchitect,
     executeWriter,
     handleImageGen,
+    handlePreviewGen,
     handleApproveRadar,
     handleApproveAnalyst,
     handleApproveArchitect,

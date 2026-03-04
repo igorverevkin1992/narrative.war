@@ -23,7 +23,7 @@ const HistorySidebar: React.FC<HistorySidebarProps> = memo(({ history, isOpen, o
         className={`fixed inset-y-0 right-0 w-80 bg-mw-black border-l border-mw-slate/30 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
       >
         <div className="p-4 border-b border-mw-slate/30 flex justify-between items-center bg-mw-gray/10">
-          <h3 className="font-bold text-mw-red tracking-widest uppercase text-sm">Operation History</h3>
+          <h3 className="font-bold text-mw-red tracking-widest uppercase text-sm">Projects</h3>
           <button onClick={onClose} className="text-mw-slate hover:text-white transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
@@ -32,7 +32,7 @@ const HistorySidebar: React.FC<HistorySidebarProps> = memo(({ history, isOpen, o
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {history.length === 0 ? (
             <div className="text-center text-mw-slate text-xs mt-10">
-              NO PRIOR OPERATIONS RECORDED
+              NO PROJECTS SAVED
             </div>
           ) : (
             history.map((item) => (
@@ -55,6 +55,11 @@ const HistorySidebar: React.FC<HistorySidebarProps> = memo(({ history, isOpen, o
                 <div className="font-bold text-white text-sm line-clamp-2 group-hover:text-mw-red transition-colors pr-2">
                   {item.topic}
                 </div>
+                {item.thumbnail_concept && (
+                  <div className="mt-1 text-[10px] text-mw-slate/70 font-mono line-clamp-1 pr-2">
+                    {item.thumbnail_concept}
+                  </div>
+                )}
                 <div className="mt-2 flex items-center gap-2">
                   <span className="text-[10px] bg-mw-slate/20 px-1 rounded text-mw-slate border border-mw-slate/20">
                     {item.model.split('-')[1] || 'MODEL'}
@@ -62,6 +67,9 @@ const HistorySidebar: React.FC<HistorySidebarProps> = memo(({ history, isOpen, o
                   <span className="text-[10px] text-mw-slate">
                     {item.script.length} Blocks
                   </span>
+                  {item.structure_map && (
+                    <span className="text-[10px] text-green-600/70">● Full</span>
+                  )}
                 </div>
               </div>
             ))

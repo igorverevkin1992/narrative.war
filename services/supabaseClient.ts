@@ -11,19 +11,35 @@ if (supabaseUrl && supabaseKey) {
   supabase = createClient(supabaseUrl, supabaseKey);
 }
 
-export const saveRunToHistory = async (topic: string, model: string, script: ScriptBlock[]): Promise<HistoryItem | null> => {
+export const saveRunToHistory = async (
+  topic: string,
+  model: string,
+  script: ScriptBlock[],
+  radarOutput?: string,
+  researchDossier?: string,
+  structureMap?: string,
+  thumbnailConcept?: string,
+): Promise<HistoryItem | null> => {
   if (!supabase) {
-    logger.warn("Supabase credentials missing. History not saved.");
+    logger.warn("Supabase credentials missing. Project not saved.");
     return null;
   }
 
   const { data, error } = await supabase
-    .from('mediawar_history')
-    .insert([{ topic, model, script }])
+    .from('projects')
+    .insert([{
+      topic,
+      model,
+      script,
+      radar_output: radarOutput ?? null,
+      research_dossier: researchDossier ?? null,
+      structure_map: structureMap ?? null,
+      thumbnail_concept: thumbnailConcept ?? null,
+    }])
     .select();
 
   if (error) {
-    logger.error('Error saving history', error);
+    logger.error('Error saving project', error);
     return null;
   }
   return (data?.[0] as HistoryItem) ?? null;
@@ -35,12 +51,12 @@ export const fetchHistory = async (): Promise<HistoryItem[]> => {
   }
 
   const { data, error } = await supabase
-    .from('mediawar_history')
-    .select('*')
+    .from('projects')
+    .select('id, created_at, topic, model, radar_output, research_dossier, structure_map, thumbnail_concept, script')
     .order('created_at', { ascending: false });
 
   if (error) {
-    logger.error('Error fetching history', error);
+    logger.error('Error fetching projects', error);
     return [];
   }
   return (data as HistoryItem[]) ?? [];
@@ -50,12 +66,12 @@ export const deleteHistoryItem = async (id: number): Promise<boolean> => {
   if (!supabase) return false;
 
   const { error } = await supabase
-    .from('mediawar_history')
+    .from('projects')
     .delete()
     .eq('id', id);
 
   if (error) {
-    logger.error('Error deleting history item', error);
+    logger.error('Error deleting project', error);
     return false;
   }
   return true;

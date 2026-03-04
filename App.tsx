@@ -11,6 +11,7 @@ import HistorySidebar from './components/HistorySidebar';
 import RichTextDisplay from './components/RichTextDisplay';
 import StepEditor from './components/StepEditor';
 import ErrorToast from './components/ErrorToast';
+import ThumbnailPreview from './components/ThumbnailPreview';
 
 // --- ICONS ---
 const ScoutIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>;
@@ -90,7 +91,7 @@ function App() {
               className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-mw-slate hover:text-mw-red transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
-              Archives ({state.history.length})
+              Projects ({state.history.length})
             </button>
             <div className="font-mono text-xs text-mw-slate hidden sm:block border-l border-mw-slate/30 pl-4">
               STATUS: {state.isProcessing ? 'BUSY' : state.stepStatus === 'WAITING_FOR_APPROVAL' ? 'WAITING' : 'IDLE'}
@@ -257,6 +258,16 @@ function App() {
                 <RichTextDisplay content={state.structureMap} />
               )}
             </div>
+          )}
+
+          {/* Thumbnail Preview */}
+          {state.thumbnailConcept && (
+            <ThumbnailPreview
+              thumbnailConcept={state.thumbnailConcept}
+              previewImageUrl={state.previewImageUrl}
+              isProcessing={state.isProcessing}
+              onGenerate={pipeline.handlePreviewGen}
+            />
           )}
 
           {state.finalScript && (
