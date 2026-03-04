@@ -23,6 +23,10 @@ You MUST use the Google Search tool.
 - Look for: "Media conglomerate DOD partnerships recent", "Defense department entertainment subsidies", "Digital IP historical revisionism", "Western media bias terminology [Topic]", "Think tank funding entertainment industry" etc. Be specific.
 - Ignore: General movie reviews or domestic US/EU partisan politics.
 
+STRICT TOPIC FILTER:
+Do NOT output standard political, military, or diplomatic news (e.g., White House executive orders, Pentagon press briefings, direct military conflicts).
+The "hook" for every topic MUST be an artifact of mass culture or the entertainment business: a blockbuster movie release, a AAA video game controversy, a streaming platform's algorithmic shift, a major studio merger, or a viral social media trend. We analyze geopolitics ONLY through the lens of entertainment and media IP.
+
 OUTPUT FORMAT:
 Return a JSON array of 4 objects. Each object must have:
 - "title": A sharp, analytical working title (e.g., "How Hollywood Stole This Victory").
