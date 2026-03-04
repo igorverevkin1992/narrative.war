@@ -277,9 +277,10 @@ export const runScoutAgent = async (signal?: AbortSignal): Promise<TopicSuggesti
     // googleSearch grounding is incompatible with responseMimeType/responseSchema —
     // use free-text response and extract JSON manually.
     // safetySettings BLOCK_NONE required: geopolitical/military research triggers default filters.
+    const today = new Date().toISOString().slice(0, 10); // e.g. "2026-03-04"
     const response = await ai.models.generateContent({
       model,
-      contents: AGENT_SCOUT_PROMPT,
+      contents: `TODAY'S DATE: ${today}. All events, news, and dates you mention MUST be in ${today.slice(0, 4)}.\n\n${AGENT_SCOUT_PROMPT}`,
       config: {
         tools,
         abortSignal: signal,
