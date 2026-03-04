@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useEffect, useReducer } from 'react';
 import { AgentType, INITIAL_STATE } from './types';
-import { APP_VERSION } from './constants';
+import { APP_VERSION, PROJECT_CONFIGS } from './constants';
 import { stateReducer } from './store/reducer';
 import { useAgentPipeline } from './hooks/useAgentPipeline';
 import { useHistory } from './hooks/useHistory';
@@ -118,6 +118,27 @@ function App() {
               <div className="bg-black border border-mw-slate/50 rounded p-3 font-mono text-[11px] space-y-1">
                 <div className="flex justify-between"><span className="text-mw-slate">Scout / Radar / Architect</span><span className="text-green-400">Flash</span></div>
                 <div className="flex justify-between"><span className="text-mw-slate">Analyst / Writer</span><span className="text-purple-400">Pro</span></div>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-mw-slate uppercase mb-2 tracking-wider">Project Format</label>
+              <div className="flex gap-2">
+                {(Object.entries(PROJECT_CONFIGS) as [string, typeof PROJECT_CONFIGS[keyof typeof PROJECT_CONFIGS]][]).map(([key, cfg]) => (
+                  <button
+                    key={key}
+                    onClick={() => dispatch({ type: 'SET_FIELD', field: 'projectType', value: key as 'youtube' | 'documentary' })}
+                    disabled={state.isProcessing}
+                    className={`flex-1 py-2 px-3 rounded border text-xs font-bold uppercase tracking-wider transition-all ${
+                      state.projectType === key
+                        ? 'border-mw-red bg-mw-red/10 text-white'
+                        : 'border-mw-slate/40 text-mw-slate hover:border-mw-red/50'
+                    } ${state.isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  >
+                    <div>{cfg.label}</div>
+                    <div className="font-mono font-normal normal-case opacity-70 mt-0.5">{cfg.description}</div>
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -270,10 +291,32 @@ function App() {
             />
           )}
 
+          {/* Documentary act progress */}
+          {state.currentWritingAct !== undefined && state.documentaryActs && (
+            <div className="bg-mw-gray/20 p-4 rounded border border-mw-red/30">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-mw-red uppercase tracking-wider font-mono">Documentary Writer</span>
+                <span className="text-xs font-mono text-mw-slate">
+                  Act {state.currentWritingAct + 1} / {state.documentaryActs.length}
+                </span>
+              </div>
+              <div className="text-xs text-gray-400 mb-2 truncate">
+                {state.documentaryActs[state.currentWritingAct]?.block}
+              </div>
+              <div className="w-full bg-black/50 rounded-full h-1.5">
+                <div
+                  className="bg-mw-red h-1.5 rounded-full transition-all duration-500"
+                  style={{ width: `${((state.currentWritingAct + 1) / state.documentaryActs.length) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {state.finalScript && (
             <ScriptDisplay
               script={state.finalScript}
               topic={state.topic}
+              projectType={state.projectType}
               radarContent={state.radarOutput}
               analystContent={state.researchDossier}
               architectContent={state.structureMap}

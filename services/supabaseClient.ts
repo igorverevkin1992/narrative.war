@@ -15,6 +15,7 @@ export const saveRunToHistory = async (
   topic: string,
   model: string,
   script: ScriptBlock[],
+  projectType?: string,
   radarOutput?: string,
   researchDossier?: string,
   structureMap?: string,
@@ -31,6 +32,7 @@ export const saveRunToHistory = async (
       topic,
       model,
       script,
+      project_type: projectType ?? 'youtube',
       radar_output: radarOutput ?? null,
       research_dossier: researchDossier ?? null,
       structure_map: structureMap ?? null,
@@ -52,7 +54,7 @@ export const fetchHistory = async (): Promise<HistoryItem[]> => {
 
   const { data, error } = await supabase
     .from('projects')
-    .select('id, created_at, topic, model, radar_output, research_dossier, structure_map, thumbnail_concept, script')
+    .select('id, created_at, topic, model, project_type, radar_output, research_dossier, structure_map, thumbnail_concept, script')
     .order('created_at', { ascending: false });
 
   if (error) {

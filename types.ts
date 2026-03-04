@@ -43,11 +43,14 @@ export interface ScriptBlock {
   imageUrl?: string;
 }
 
+export type ProjectType = 'youtube' | 'documentary';
+
 export interface HistoryItem {
   id: number;
   created_at: string;
   topic: string;
   model: string;
+  project_type?: string;
   radar_output?: string;
   research_dossier?: string;
   structure_map?: string;
@@ -65,12 +68,17 @@ export interface SystemState {
   isSteppable: boolean;
   stepStatus: 'IDLE' | 'WAITING_FOR_APPROVAL' | 'PROCESSING';
 
+  // Project Format
+  projectType: ProjectType;
+
   // Agent Outputs
   scoutSuggestions?: TopicSuggestion[]; // Output from Scout
   radarOutput?: string; // Potential viral topics
   researchDossier?: string; // Always stored as formatted string
-  structureMap?: string; // 5-block structure plan
+  structureMap?: string; // Structure plan (6-act for YouTube, 10-12-act for documentary)
   thumbnailConcept?: string; // Extracted from Architect output
+  documentaryActs?: Array<{ block: string; timecode: string; description: string }>; // Documentary only
+  currentWritingAct?: number; // 0-indexed act being written (documentary multi-pass progress)
   finalScript?: ScriptBlock[];
 
   // Preview
@@ -92,6 +100,7 @@ export const INITIAL_STATE: SystemState = {
   isProcessing: false,
   isSteppable: true,
   stepStatus: 'IDLE',
+  projectType: 'youtube',
   logs: ['> NARRATIVE.WAR INITIALIZED...', '> WAITING FOR TARGET VECTOR...'],
   history: [],
   showHistory: false

@@ -59,13 +59,14 @@ export function useHistory(dispatch: Dispatch<Action>, addLog: (msg: string) => 
     model: string,
     script: ScriptBlock[],
     currentHistory: HistoryItem[],
+    projectType?: string,
     radarOutput?: string,
     researchDossier?: string,
     structureMap?: string,
     thumbnailConcept?: string,
   ): Promise<HistoryItem[]> => {
     try {
-      const savedEntry = await saveRunToHistory(topic, model, script, radarOutput, researchDossier, structureMap, thumbnailConcept);
+      const savedEntry = await saveRunToHistory(topic, model, script, projectType, radarOutput, researchDossier, structureMap, thumbnailConcept);
       if (!savedEntry) {
         addLog('>>> WARNING: Project save skipped (Supabase disabled).');
         return currentHistory;

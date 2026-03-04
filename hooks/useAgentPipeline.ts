@@ -5,12 +5,14 @@ import {
   runAnalystAgent,
   runArchitectAgent,
   runWriterAgent,
+  runDocumentaryActWriter,
+  calculateDurationAndRetiming,
   generateImageForBlock,
   generatePreviewImage,
 } from '../services/geminiService';
 import { AgentType, SystemState, TopicSuggestion, ResearchDossier, ScriptBlock, HistoryItem } from '../types';
 import { Action } from '../store/reducer';
-import { AGENT_MODELS } from '../constants';
+import { AGENT_MODELS, PROJECT_CONFIGS } from '../constants';
 
 // Helper: converts ResearchDossier object to readable string
 export const formatDossierToString = (d: ResearchDossier): string => {
@@ -59,6 +61,7 @@ interface PipelineOptions {
     model: string,
     script: ScriptBlock[],
     currentHistory: HistoryItem[],
+    projectType?: string,
     radarOutput?: string,
     researchDossier?: string,
     structureMap?: string,
@@ -112,19 +115,20 @@ export function useAgentPipeline({
     );
     if (!script) return;
 
-    // Validate minimum script length (12 min = 10,800 chars at 15 chars/sec)
+    const { projectType } = stateRef.current;
+    const config = PROJECT_CONFIGS[projectType];
     const totalChars = script.reduce((sum, b) => sum + (b.audioScript?.length ?? 0), 0);
     const estMin = (totalChars / 900).toFixed(1);
     addLog(`>>> SCRIPT: ${script.length} blocks, ~${estMin} min (${totalChars.toLocaleString()} chars).`);
-    if (totalChars < 10800) {
-      const warning = `Script too short: ${script.length} blocks / ~${estMin} min. Min is 12 min. Consider re-running Writer.`;
+    if (totalChars < config.minChars) {
+      const warning = `Script too short: ${script.length} blocks / ~${estMin} min. Min is ${config.description}. Consider re-running Writer.`;
       addLog(`>>> WARNING: ${warning}`);
       dispatch({ type: 'MERGE', partial: { lastError: warning } });
     }
 
     addLog('>>> SCRIPT GENERATED.');
     const { topic, history, radarOutput, researchDossier, structureMap, thumbnailConcept } = stateRef.current;
-    const updatedHistory = await saveToHistory(topic, AGENT_MODELS.WRITER, script, history, radarOutput, researchDossier, structureMap, thumbnailConcept);
+    const updatedHistory = await saveToHistory(topic, AGENT_MODELS.WRITER, script, history, projectType, radarOutput, researchDossier, structureMap, thumbnailConcept);
 
     dispatch({
       type: 'MERGE', partial: {
@@ -138,33 +142,101 @@ export function useAgentPipeline({
     addLog('>>> SYSTEM STANDBY.');
   }, [newController, dispatch, addLog, saveToHistory]);
 
+  // ── DOCUMENTARY MULTI-PASS WRITER ────────────────────────────────────────────
+  const executeDocumentaryWriter = useCallback(async (
+    acts: Array<{ block: string; timecode: string; description: string }>,
+    inputDossier: string,
+  ) => {
+    const controller = newController();
+    dispatch({ type: 'MERGE', partial: { isProcessing: true, currentAgent: AgentType.WRITER, stepStatus: 'PROCESSING', lastError: undefined } });
+    addLog(`>>> DOCUMENTARY WRITER: ${acts.length} ACTS TO WRITE.`);
+
+    let allBlocks: ScriptBlock[] = [];
+
+    for (let i = 0; i < acts.length; i++) {
+      if (controller.signal.aborted) return;
+      dispatch({ type: 'MERGE', partial: { currentWritingAct: i } });
+      addLog(`>>> ACT ${i + 1}/${acts.length}: ${acts[i].block}...`);
+
+      const actBlocks = await runDocumentaryActWriter(
+        acts[i], acts, inputDossier, allBlocks.slice(-3), controller.signal
+      );
+
+      if (!actBlocks) {
+        const error = `Act ${i + 1} ("${acts[i].block}") generation failed.`;
+        addLog(`>>> ERROR: ${error}`);
+        dispatch({ type: 'MERGE', partial: { isProcessing: false, stepStatus: 'IDLE', lastError: error } });
+        return;
+      }
+
+      allBlocks = [...allBlocks, ...actBlocks];
+      addLog(`>>> ACT ${i + 1} DONE: ${actBlocks.length} blocks.`);
+      dispatch({ type: 'MERGE', partial: { finalScript: calculateDurationAndRetiming(allBlocks) } });
+    }
+
+    const retimed = calculateDurationAndRetiming(allBlocks);
+    const config = PROJECT_CONFIGS['documentary'];
+    const totalChars = retimed.reduce((sum, b) => sum + (b.audioScript?.length ?? 0), 0);
+    const estMin = (totalChars / 900).toFixed(1);
+    addLog(`>>> DOCUMENTARY: ${retimed.length} blocks, ~${estMin} min (${totalChars.toLocaleString()} chars).`);
+    if (totalChars < config.minChars) {
+      const warning = `Documentary too short: ~${estMin} min. Min is 60 min. Consider re-running Writer.`;
+      addLog(`>>> WARNING: ${warning}`);
+      dispatch({ type: 'MERGE', partial: { lastError: warning } });
+    }
+
+    addLog('>>> DOCUMENTARY SCRIPT GENERATED.');
+    const { topic, history, radarOutput, researchDossier, structureMap, thumbnailConcept } = stateRef.current;
+    const updatedHistory = await saveToHistory(topic, AGENT_MODELS.WRITER, retimed, history, 'documentary', radarOutput, researchDossier, structureMap, thumbnailConcept);
+
+    dispatch({
+      type: 'MERGE', partial: {
+        currentAgent: AgentType.COMPLETED,
+        finalScript: retimed,
+        isProcessing: false,
+        stepStatus: 'IDLE',
+        currentWritingAct: undefined,
+        history: updatedHistory,
+      }
+    });
+    addLog('>>> SYSTEM STANDBY.');
+  }, [newController, dispatch, addLog, saveToHistory]);
+
   // ── ARCHITECT ───────────────────────────────────────────────────────────────
   const executeArchitect = useCallback(async (inputDossier: string) => {
     const controller = newController();
     dispatch({ type: 'MERGE', partial: { researchDossier: inputDossier } });
     addLog('>>> ACTIVATING AGENT C: THE ARCHITECT...');
 
+    const { projectType } = stateRef.current;
     const result = await runStep(
       AgentType.ARCHITECT,
-      () => runArchitectAgent(inputDossier, controller.signal),
+      () => runArchitectAgent(inputDossier, projectType, controller.signal),
       dispatch, addLog, controller,
       () => {}
     );
     if (!result) return;
 
-    const { structure, thumbnailConcept } = result;
+    const { structure, thumbnailConcept, acts } = result;
     addLog('>>> STRUCTURE LOCKED.');
     const isSteppable = stateRef.current.isSteppable;
     dispatch({
       type: 'MERGE', partial: {
         structureMap: structure,
         thumbnailConcept,
+        documentaryActs: acts,
         isProcessing: !isSteppable,
         stepStatus: isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING',
       }
     });
     setEditedStructure(structure);
-    if (!isSteppable) executeWriter(structure, inputDossier);
+    if (!isSteppable) {
+      if (projectType === 'documentary' && acts) {
+        executeDocumentaryWriter(acts, inputDossier);
+      } else {
+        executeWriter(structure, inputDossier);
+      }
+    }
   }, [newController, dispatch, addLog, setEditedStructure, executeWriter]);
 
   // ── ANALYST ─────────────────────────────────────────────────────────────────
@@ -288,8 +360,14 @@ export function useAgentPipeline({
   }, [executeArchitect]);
 
   const handleApproveArchitect = useCallback((editedStructure: string, dossier: string | undefined) => {
-    if (dossier) executeWriter(editedStructure, dossier);
-  }, [executeWriter]);
+    if (!dossier) return;
+    const { projectType, documentaryActs } = stateRef.current;
+    if (projectType === 'documentary' && documentaryActs) {
+      executeDocumentaryWriter(documentaryActs, dossier);
+    } else {
+      executeWriter(editedStructure, dossier);
+    }
+  }, [executeWriter, executeDocumentaryWriter]);
 
   const handleSelectTopic = useCallback((suggestion: TopicSuggestion) => {
     addLog(`>>> TARGET CONFIRMED: ${suggestion.title}`);
@@ -311,6 +389,7 @@ export function useAgentPipeline({
     executeAnalyst,
     executeArchitect,
     executeWriter,
+    executeDocumentaryWriter,
     handleImageGen,
     handlePreviewGen,
     handleApproveRadar,

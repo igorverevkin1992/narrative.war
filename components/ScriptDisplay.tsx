@@ -1,16 +1,14 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ScriptBlock } from '../types';
-import { APP_VERSION, CHARS_PER_SECOND } from '../constants';
+import { ScriptBlock, ProjectType } from '../types';
+import { APP_VERSION, CHARS_PER_SECOND, PROJECT_CONFIGS } from '../constants';
 
 const PAGE_SIZE = 20;
-// Minimum characters across all audioScript fields for a 12-minute video.
-// Formula: 12 min × 60 sec × CHARS_PER_SECOND = 10,800
-const MIN_AUDIO_CHARS = 12 * 60 * CHARS_PER_SECOND;
 
 interface ScriptDisplayProps {
   script: ScriptBlock[];
   topic: string;
+  projectType?: ProjectType;
   radarContent?: string;
   analystContent?: string;
   architectContent?: string;
@@ -29,11 +27,13 @@ const escapeHtml = (str: string): string =>
 const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   script,
   topic,
+  projectType = 'youtube',
   radarContent,
   analystContent,
   architectContent,
   onGenerateImage
 }) => {
+  const MIN_AUDIO_CHARS = PROJECT_CONFIGS[projectType].minChars;
   const [loadingImages, setLoadingImages] = useState<number[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [page, setPage] = useState(0);

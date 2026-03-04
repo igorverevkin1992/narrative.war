@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { AGENT_SCOUT_PROMPT, AGENT_LENS_PROMPT, AGENT_RESEARCH_PROMPT, AGENT_ARCHITECT_PROMPT, AGENT_SCRIPTWRITER_PROMPT, CHARS_PER_SECOND, MIN_BLOCK_DURATION_SEC, IMAGE_GEN_MODEL, IMAGE_GEN_PROMPT_PREFIX, API_RETRY_COUNT, API_RETRY_BASE_DELAY_MS, AGENT_MODELS } from "../constants";
-import { ResearchDossier, ScriptBlock, TopicSuggestion } from "../types";
+import { AGENT_SCOUT_PROMPT, AGENT_LENS_PROMPT, AGENT_RESEARCH_PROMPT, AGENT_ARCHITECT_PROMPT, AGENT_ARCHITECT_DOCUMENTARY_PROMPT, AGENT_SCRIPTWRITER_PROMPT, AGENT_DOCUMENTARY_WRITER_PROMPT, CHARS_PER_SECOND, MIN_BLOCK_DURATION_SEC, IMAGE_GEN_MODEL, IMAGE_GEN_PROMPT_PREFIX, API_RETRY_COUNT, API_RETRY_BASE_DELAY_MS, AGENT_MODELS } from "../constants";
+import { ResearchDossier, ScriptBlock, TopicSuggestion, ProjectType } from "../types";
 import { logger } from "./logger";
 
 // API client factory.
@@ -29,13 +29,13 @@ const getClient = () => {
 // --- STYLE RETRIEVAL HELPER ---
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
 
-async function fetchHarrisStyle(topic: string): Promise<string> {
+async function fetchHarrisStyle(topic: string, k = 3): Promise<string> {
   try {
-    logger.info(`📡 Запрашиваем стиль Johnny Harris для темы: "${topic}"...`);
+    logger.info(`📡 Запрашиваем стиль Johnny Harris для темы: "${topic}" (k=${k})...`);
     const response = await fetch(`${BACKEND_URL}/api/get-harris-style`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic: topic })
+      body: JSON.stringify({ topic, k })
     });
 
     if (response.ok) {
@@ -201,7 +201,7 @@ const expandTextForTiming = (text: string): string => {
   return s.replace(/\s+/g, ' ').trim();
 };
 
-const calculateDurationAndRetiming = (script: ScriptBlock[]): ScriptBlock[] => {
+export const calculateDurationAndRetiming = (script: ScriptBlock[]): ScriptBlock[] => {
   let runningTimeSeconds = 0;
 
   return script.map(block => {
@@ -389,14 +389,15 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string, sign
   }, 'runAnalystAgent', signal);
 };
 
-export const runArchitectAgent = async (dossier: string, signal?: AbortSignal): Promise<{ structure: string; thumbnailConcept: string }> => {
+export const runArchitectAgent = async (dossier: string, projectType: ProjectType = 'youtube', signal?: AbortSignal): Promise<{ structure: string; thumbnailConcept: string; acts?: ArchitectBlock[] }> => {
   const model = AGENT_MODELS.ARCHITECT;
+  const prompt = projectType === 'documentary' ? AGENT_ARCHITECT_DOCUMENTARY_PROMPT : AGENT_ARCHITECT_PROMPT;
   return withRetry(async () => {
     const ai = getClient();
 
     const response = await ai.models.generateContent({
       model,
-      contents: `DOSSIER: ${dossier}\n\n${AGENT_ARCHITECT_PROMPT}`,
+      contents: `DOSSIER: ${dossier}\n\n${prompt}`,
       config: {
         abortSignal: signal,
         responseMimeType: "application/json",
@@ -426,7 +427,12 @@ export const runArchitectAgent = async (dossier: string, signal?: AbortSignal): 
     const text = response.text;
     if (!text) throw new Error("Architect failed to build structure.");
     const parsed = safeJsonParse<ArchitectPlan>(text, 'Architect');
-    return { structure: formatArchitectOutput(parsed), thumbnailConcept: parsed.thumbnailConcept };
+    const result: { structure: string; thumbnailConcept: string; acts?: ArchitectBlock[] } = {
+      structure: formatArchitectOutput(parsed),
+      thumbnailConcept: parsed.thumbnailConcept,
+    };
+    if (projectType === 'documentary') result.acts = parsed.structure;
+    return result;
   }, 'runArchitectAgent', signal);
 };
 
@@ -509,6 +515,67 @@ export const runWriterAgent = async (
     const rawScript = safeJsonParse<ScriptBlock[]>(fullText, 'Writer');
     return calculateDurationAndRetiming(rawScript);
   }, 'runWriterAgent');
+};
+
+// --- DOCUMENTARY: PER-ACT WRITER (non-streaming, ~20-25 blocks per call) ---
+export const runDocumentaryActWriter = async (
+  act: { block: string; timecode: string; description: string },
+  allActs: { block: string; timecode: string; description: string }[],
+  dossier: string,
+  prevBlocks: ScriptBlock[],
+  signal?: AbortSignal,
+): Promise<ScriptBlock[] | null> => {
+  const model = AGENT_MODELS.WRITER;
+  const ai = getClient();
+
+  const topicQuery = `${act.block} ${act.description}`.substring(0, 200);
+  const styleContext = await fetchHarrisStyle(topicQuery, 6);
+
+  const structureSummary = allActs.map((a, i) =>
+    `ACT ${i + 1}: ${a.block} [${a.timecode}]`
+  ).join('\n');
+
+  const prevContext = prevBlocks.length > 0
+    ? `\n\nLAST BLOCKS FROM PREVIOUS ACT (maintain narrative continuity):\n${prevBlocks.map(b => `"${b.audioScript}"`).join('\n')}`
+    : '';
+
+  const contents = `FULL DOCUMENTARY STRUCTURE:\n${structureSummary}\n\nCURRENT ACT TO WRITE:\n${act.block} [${act.timecode}]\n${act.description}${prevContext}\n\nRESEARCH DOSSIER:\n${dossier}\n\n${AGENT_DOCUMENTARY_WRITER_PROMPT}\n\n${styleContext ? `=== STYLE REFERENCE: HARRIS/KOZYRA DATA-NOIR ===\n${styleContext}\n================================================` : ''}`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents,
+      config: {
+        abortSignal: signal,
+        responseMimeType: "application/json",
+        maxOutputTokens: 32768,
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              timecode:      { type: Type.STRING },
+              visualCue:     { type: Type.STRING },
+              overlayFX:     { type: Type.STRING },
+              audioScript:   { type: Type.STRING },
+              russianScript: { type: Type.STRING },
+              blockType:     { type: Type.STRING, enum: ['HOOK', 'INTRO', 'BODY', 'TRANSITION', 'SALES', 'OUTRO'] }
+            },
+            required: ["timecode", "visualCue", "overlayFX", "audioScript", "russianScript", "blockType"]
+          }
+        }
+      }
+    });
+
+    const text = response.text;
+    if (!text) return null;
+    return safeJsonParse<ScriptBlock[]>(text, `DocWriter ${act.block}`);
+  } catch (e: unknown) {
+    if (signal?.aborted) return null;
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(`Documentary act writer failed: ${act.block}`, { message });
+    return null;
+  }
 };
 
 export const generateImageForBlock = async (prompt: string): Promise<string | null> => {

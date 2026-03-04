@@ -25,6 +25,7 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com"
 
 class TopicRequest(BaseModel):
     topic: str
+    k: int = 3  # Number of RAG examples to return from ChromaDB
 
 
 # ── Existing endpoint ────────────────────────────────────────────────────────
@@ -48,9 +49,9 @@ def get_prompts():
 @app.post("/api/get-harris-style")
 async def get_style(request: TopicRequest):
     """Returns Johnny Harris style context from ChromaDB for a given topic."""
-    print(f"📥 Style request for: {request.topic}")
+    print(f"📥 Style request for: {request.topic} (k={request.k})")
     try:
-        style_context = get_style_examples(request.topic)
+        style_context = get_style_examples(request.topic, k=request.k)
         return {"topic": request.topic, "style_context": style_context}
     except Exception as e:
         print(f"❌ Error: {e}")
