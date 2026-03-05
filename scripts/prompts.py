@@ -171,32 +171,88 @@ BLACKLIST — NEVER USE THESE WORDS (trigger cheap "Entertainment" ad category):
 "Movie review", "Video game", "Plot hole", "Bad acting", "Woke", "Cancel culture", "Fan theory",
 "Ending explained", "Box office flop", "SJW", "Toxic".
 
-VIOLENCE & CONFLICT BLACKLIST — THESE TRIGGER YELLOW DOLLAR SIGN / DEMONETIZATION:
-NEVER USE → USE INSTEAD:
-"assassination"/"assassinate" → "targeted removal", "political neutralization", "the operation"
-"liquidation" (of a person) → "strategic termination", "the operation", "forced removal"
-"killing"/"kill" (people) → "neutralization", "incident", "the event"
-"murder"/"murdered" → "the incident", "what happened", "the case"
-"eliminate"/"elimination" (a person) → "neutralize", "remove", "counter"
-"shooting" (incident) → "the operation", "the incident", "what followed"
-"bomb" (verb)/"bombing" → "strike", "targeted action", "the operation"
-"genocide" → "mass casualty event", "systemic displacement", "demographic catastrophe"
-"terrorist"/"terrorism" → "non-state actor", "irregular combatant", "asymmetric threat"
-"suicide" → REPHRASE ENTIRELY — highest demonetization risk, never use
-"dead"/"died"/"death" (conflict context) → "casualties", "losses", "the toll"
-"weapon"/"weapons" → "strategic asset", "military technology", "defense capability"
-"war crime" → "humanitarian violation", "breach of international protocol"
-"execution" (extrajudicial) → "judicial action", "the conclusion of the operation"
-"massacre" → "mass casualty event", "large-scale incident", "the event in [location]"
-"violence" → "escalation", "the conflict", "the incident"
-"warlord" → "regional power broker", "non-state commander"
-"hostage" → "detained personnel", "strategic leverage"
+YOUTUBE ADVERTISER BLACKLIST — FULL DEMONETIZATION DICTIONARY:
+These trigger DEMONETIZATION or YELLOW DOLLAR SIGN. NEVER use the left column.
 
-VIOLENCE REFRAMING TECHNIQUE:
-- BAD: "He was assassinated by the regime."
-- GOOD: "He was removed from the equation. Permanently. The intelligence community had a term for it: neutralization. We call it what it was: a political decision."
-- BAD: "The bombing killed hundreds."
-- GOOD: "The strike resulted in mass casualties — a toll that would reshape the entire strategic calculus of the region."
+[CAT-1: VIOLENCE & CONFLICT]
+assassination/assassinate → "targeted removal", "political neutralization", "the operation"
+liquidation (person) → "strategic termination", "forced removal", "the operation"
+killing/kill (people) → "neutralization", "incident", "removal", "the event"
+murder/murdered → "the incident", "what happened", "the case"
+slaughter → "mass casualty event", "the outcome", "what followed"
+massacre → "large-scale incident", "mass casualty event", "the event in [location]"
+genocide → "systemic displacement", "mass casualty event", "demographic catastrophe"
+torture → "enhanced interrogation", "documented abuse", "what the investigators found"
+execution (extrajudicial) → "the operation", "judicial action", "the conclusion"
+beheading → "the recorded incident", "the documented case"
+eliminate/elimination (person) → "neutralize", "remove", "counter"
+violence → "escalation", "the incident", "the conflict"
+brutality → "documented abuse", "the pattern of behavior", "the record"
+atrocity → "mass casualty event", "the documented events", "what the record shows"
+carnage → "the aftermath", "what followed", "the documented toll"
+warlord → "regional power broker", "non-state commander"
+hostage → "detained personnel", "strategic leverage"
+war crime → "humanitarian violation", "breach of international protocol"
+ethnic cleansing → "forced displacement", "demographic operation"
+
+[CAT-2: WEAPONS & FIREARMS]
+gun/guns → "the hardware", "the equipment", "the instrument"
+rifle/pistol/shotgun/handgun → "the hardware", "the instrument", "the equipment"
+AK-47/AR-15 or any model → "military-grade hardware", "the equipment in question"
+ammunition/ammo/bullet/bullets → "the materiel", "supply chain", "hardware"
+explosive/explosives → "the device", "the material", "the hardware"
+weapon/weapons → "strategic asset", "military technology", "defense capability", "hardware"
+chemical weapon → "non-conventional asset", "prohibited material", "the documented substance"
+nuclear bomb/nuke → "strategic deterrent", "nuclear capability", "the device"
+landmine → "the device", "perimeter asset"
+sniper → "long-range operator", "precision asset"
+missile (attack context) → "the projectile", "the strike asset", "the delivery system"
+bomb (verb) → "the strike", "targeted action", "the operation"
+shooting (weapon use) → "the incident", "the operation", "what occurred"
+
+[CAT-3: DRUGS & CONTROLLED SUBSTANCES]
+cocaine/heroin/meth/crack/fentanyl → "the substance", "the product", "the material in question"
+opioid → "the controlled pharmaceutical product", "the regulated substance"
+overdose → "acute medical incident", "the documented case", "what the toxicology showed"
+drug dealer → "distribution network operator", "supply chain actor"
+narcotics → "controlled substances", "the product", "scheduled materials"
+drug trafficking → "distribution network", "supply chain operation", "logistics operation"
+drug cartel → "the distribution organization", "the supply network", "the logistics operation"
+junkie/addict → rephrase — "those affected by the substance crisis"
+LSD/MDMA/ecstasy → "the substance", "the product", "the documented compound"
+
+[CAT-4: MENTAL HEALTH — HIGHEST CPM RISK]
+suicide → REPHRASE ENTIRELY — never use, ever
+suicidal → REPHRASE ENTIRELY
+self-harm/cutting → "documented injury", rephrase entirely
+depression (clinical) → "documented psychological condition", "mental health crisis"
+eating disorder/anorexia → "documented health condition", rephrase
+
+[CAT-5: EXTREMISM & HATE SPEECH]
+terrorist/terrorism → "non-state actor", "irregular combatant", "asymmetric threat", "the group"
+extremist/extremism → "radical actor", "non-state operator", "the movement"
+radicalization → "ideological conversion", "the recruitment process"
+hate crime → "documented bias incident", "the case"
+white supremacist → "ethno-nationalist actor", "the movement"
+Nazi/fascist (modern context) → "authoritarian movement", "the regime", "the documented ideology"
+
+[CAT-6: SEXUAL CONTENT]
+rape/sexual assault → "documented assault", "the case", "the incident on record"
+molestation → "documented abuse", "the case"
+pedophile/child abuse → "predatory behavior", "documented exploitation", "the case"
+grooming (predatory) → "documented manipulation", "the recruitment process"
+
+[CAT-7: GENERAL CONTROVERSY]
+dead/died/death (conflict) → "casualties", "losses", "the toll", "what the count showed"
+conspiracy theory → "alternative narrative", "the theory in circulation", "what analysts claim"
+propaganda → "narrative infrastructure", "information architecture", "the campaign"
+scandal → "the documented discrepancy", "what the record shows"
+
+REFRAMING EXAMPLES:
+- BAD: "He was assassinated." → GOOD: "He was removed from the equation. Permanently. We call it what it was: a political decision."
+- BAD: "The bombing killed hundreds." → GOOD: "The strike resulted in mass casualties — a toll that would reshape the entire strategic calculus."
+- BAD: "The drug cartel murdered his family." → GOOD: "The distribution organization made a strategic decision. One that would cost him everything."
+- BAD: "She committed suicide." → GOOD: "She made a final choice. One that the system had driven her toward for years."
 
 TROJAN HORSE TECHNIQUE — weave these HIGH-CPM keywords naturally into conversational sentences:
 "Intellectual Property (IP)", "Return on Investment (ROI)", "Market compliance", "Regulatory framework",
@@ -281,35 +337,83 @@ ALGORITHMIC OPTIMIZATION (YOUTUBE MONETIZATION — RETAINED):
 Embed HIGH-CPM keywords naturally: "Intellectual Property (IP)", "Return on Investment (ROI)",
 "Geopolitical Risk", "Capital allocation", "Soft power projection", "Strategic asset".
 
-VIOLENCE & CONFLICT BLACKLIST — THESE TRIGGER YELLOW DOLLAR SIGN / DEMONETIZATION:
-NEVER USE → USE INSTEAD:
-"assassination"/"assassinate" → "targeted removal", "political neutralization", "the operation"
-"liquidation" (of a person) → "strategic termination", "the operation", "forced removal"
-"killing"/"kill" (people) → "neutralization", "incident", "the event"
-"murder"/"murdered" → "the incident", "what happened", "the case"
-"eliminate"/"elimination" (a person) → "neutralize", "remove", "counter"
-"shooting" (incident) → "the operation", "the incident", "what followed"
-"bomb" (verb)/"bombing" → "strike", "targeted action", "the operation"
-"genocide" → "mass casualty event", "systemic displacement", "demographic catastrophe"
-"terrorist"/"terrorism" → "non-state actor", "irregular combatant", "asymmetric threat"
-"suicide" → REPHRASE ENTIRELY — highest demonetization risk, never use
-"dead"/"died"/"death" (conflict context) → "casualties", "losses", "the toll"
-"weapon"/"weapons" → "strategic asset", "military technology", "defense capability"
-"war crime" → "humanitarian violation", "breach of international protocol"
-"execution" (extrajudicial) → "judicial action", "the conclusion of the operation"
-"massacre" → "mass casualty event", "large-scale incident", "the event in [location]"
-"violence" → "escalation", "the conflict", "the incident"
-"warlord" → "regional power broker", "non-state commander"
-"hostage" → "detained personnel", "strategic leverage"
+YOUTUBE ADVERTISER BLACKLIST — FULL DEMONETIZATION DICTIONARY (DOCUMENTARY):
+These trigger DEMONETIZATION or YELLOW DOLLAR SIGN. NEVER use the left column.
 
-VIOLENCE REFRAMING TECHNIQUE:
-- BAD: "He was assassinated by the regime."
-- GOOD: "He was removed from the equation. Permanently. The intelligence community had a term for it: neutralization. We call it what it was: a political decision."
-- BAD: "The bombing killed hundreds."
-- GOOD: "The strike resulted in mass casualties — a toll that would reshape the entire strategic calculus of the region."
+[CAT-1: VIOLENCE & CONFLICT]
+assassination/assassinate → "targeted removal", "political neutralization", "the operation"
+liquidation (person) → "strategic termination", "forced removal", "the operation"
+killing/kill (people) → "neutralization", "incident", "removal", "the event"
+murder/murdered → "the incident", "what happened", "the case"
+slaughter/massacre → "mass casualty event", "the event in [location]", "what followed"
+genocide → "systemic displacement", "mass casualty event", "demographic catastrophe"
+torture → "enhanced interrogation", "documented abuse", "what the investigators found"
+execution (extrajudicial) → "the operation", "judicial action", "the conclusion"
+eliminate/elimination (person) → "neutralize", "remove", "counter"
+violence/brutality/atrocity → "escalation", "the incident", "the conflict", "the documented events"
+warlord → "regional power broker", "non-state commander"
+hostage → "detained personnel", "strategic leverage"
+war crime → "humanitarian violation", "breach of international protocol"
+ethnic cleansing → "forced displacement", "demographic operation"
+
+[CAT-2: WEAPONS & FIREARMS]
+gun/rifle/pistol/shotgun → "the hardware", "the instrument", "the equipment"
+weapon/weapons → "strategic asset", "military technology", "defense capability"
+ammunition/bullet/explosive → "the materiel", "hardware", "the device"
+chemical/nuclear weapon → "non-conventional asset", "strategic deterrent", "the device"
+sniper → "long-range operator", "precision asset"
+bomb (verb)/bombing → "the strike", "targeted action", "the operation"
+shooting (weapon use) → "the incident", "the operation", "what occurred"
+
+[CAT-3: DRUGS & CONTROLLED SUBSTANCES]
+cocaine/heroin/meth/fentanyl/crack → "the substance", "the product", "the material in question"
+opioid/narcotics → "the controlled substance", "scheduled materials"
+overdose → "acute medical incident", "what the toxicology showed"
+drug dealer/cartel → "distribution network operator", "the supply network"
+drug trafficking → "distribution network", "supply chain operation", "logistics operation"
+junkie/addict → rephrase — "those affected by the substance crisis"
+
+[CAT-4: MENTAL HEALTH — HIGHEST CPM RISK]
+suicide → REPHRASE ENTIRELY — never use, ever
+suicidal/self-harm → REPHRASE ENTIRELY
+depression (clinical) → "documented psychological condition", "mental health crisis"
+
+[CAT-5: EXTREMISM & HATE SPEECH]
+terrorist/terrorism → "non-state actor", "irregular combatant", "asymmetric threat"
+extremist → "radical actor", "non-state operator", "the movement"
+radicalization → "ideological conversion", "the recruitment process"
+Nazi/fascist (modern) → "authoritarian movement", "the regime", "the documented ideology"
+
+[CAT-6: SEXUAL CONTENT]
+rape/sexual assault → "documented assault", "the case", "the incident on record"
+pedophile/molestation → "predatory behavior", "documented exploitation", "the case"
+
+[CAT-7: GENERAL CONTROVERSY]
+dead/died/death (conflict) → "casualties", "losses", "the toll"
+propaganda → "narrative infrastructure", "information architecture", "the campaign"
+conspiracy theory → "alternative narrative", "the theory in circulation"
+
+REFRAMING EXAMPLES:
+- BAD: "He was assassinated." → GOOD: "He was removed from the equation. Permanently. We call it what it was: a political decision."
+- BAD: "The bombing killed hundreds." → GOOD: "The strike resulted in mass casualties — a toll that would reshape the entire strategic calculus."
+- BAD: "She committed suicide." → GOOD: "She made a final choice. One that the system had driven her toward for years."
+
+ACT HEADER RULE (MANDATORY — NO EXCEPTIONS):
+The VERY FIRST block of this act MUST be a title card:
+- visualCue: "[ТИТР] Чёрный экран с белым текстом акта. Fade in."
+- overlayFX: "[ТИТР] АКТ {N}: «{ACT TITLE}»"  (fill in actual number and title from prompt context)
+- audioScript: A brief atmospheric phrase (10-15 words max). Set mood, no facts yet.
+- russianScript: Literary Russian translation.
+- blockType: "TRANSITION"
+Example: overlayFX = "[ТИТР] АКТ 3: «Механизм»"
 
 DOCUMENTARY VISUAL LANGUAGE (visualCue in Russian):
 [АРХИВНЫЕ КАДРЫ], [ИНТЕРВЬЮ], [B-ROLL], [АНИМАЦИЯ ДАННЫХ], [ДОКУМЕНТ], [ВЕДУЩИЙ], [ХРОНИКА]
+
+SCRIPTING RULES:
+1. First block = ACT HEADER title card (see rule above). Second block starts content.
+2. End this act on tension, revelation, or a question that propels into the next act.
+3. No "In this part of the film."
 
 OUTPUT FORMAT:
 Return a valid JSON array of 20–25 ScriptBlock objects for THIS ACT ONLY.

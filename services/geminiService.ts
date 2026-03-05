@@ -532,6 +532,8 @@ export const runDocumentaryActWriter = async (
   const topicQuery = `${act.block} ${act.description}`.substring(0, 200);
   const styleContext = await fetchHarrisStyle(topicQuery, 6);
 
+  const actIndex = allActs.indexOf(act) + 1;
+
   const structureSummary = allActs.map((a, i) =>
     `ACT ${i + 1}: ${a.block} [${a.timecode}]`
   ).join('\n');
@@ -540,7 +542,7 @@ export const runDocumentaryActWriter = async (
     ? `\n\nLAST BLOCKS FROM PREVIOUS ACT (maintain narrative continuity):\n${prevBlocks.map(b => `"${b.audioScript}"`).join('\n')}`
     : '';
 
-  const contents = `FULL DOCUMENTARY STRUCTURE:\n${structureSummary}\n\nCURRENT ACT TO WRITE:\n${act.block} [${act.timecode}]\n${act.description}${prevContext}\n\nRESEARCH DOSSIER:\n${dossier}\n\n${AGENT_DOCUMENTARY_WRITER_PROMPT}\n\n${styleContext ? `=== STYLE REFERENCE: HARRIS/KOZYRA DATA-NOIR ===\n${styleContext}\n================================================` : ''}`;
+  const contents = `FULL DOCUMENTARY STRUCTURE:\n${structureSummary}\n\nCURRENT ACT TO WRITE: ACT ${actIndex} OF ${allActs.length}\nTITLE: "${act.block}"\nTIMECODE: ${act.timecode}\n${act.description}${prevContext}\n\nRESEARCH DOSSIER:\n${dossier}\n\n${AGENT_DOCUMENTARY_WRITER_PROMPT}\n\n${styleContext ? `=== STYLE REFERENCE: HARRIS/KOZYRA DATA-NOIR ===\n${styleContext}\n================================================` : ''}`;
 
   return withRetry(async () => {
     const ai = getClient();
