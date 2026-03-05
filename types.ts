@@ -41,9 +41,19 @@ export interface ScriptBlock {
   russianScript: string;
   blockType: 'HOOK' | 'INTRO' | 'BODY' | 'TRANSITION' | 'SALES' | 'OUTRO';
   imageUrl?: string;
+  assetUrl?: string;
+  assetName?: string;
 }
 
 export type ProjectType = 'youtube' | 'documentary';
+
+export interface SeoPackage {
+  titles: string[];
+  description: string;
+  tags: string;
+  firstComment: string;
+  endScreenScript: string;
+}
 
 export interface HistoryItem {
   id: number;
@@ -80,6 +90,9 @@ export interface SystemState {
   documentaryActs?: Array<{ block: string; timecode: string; description: string }>; // Documentary only
   currentWritingAct?: number; // 0-indexed act being written (documentary multi-pass progress)
   finalScript?: ScriptBlock[];
+
+  // SEO Package
+  seoPackage?: SeoPackage;
 
   // Preview
   previewImageUrl?: string;

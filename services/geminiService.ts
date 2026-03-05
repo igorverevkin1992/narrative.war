@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { AGENT_SCOUT_PROMPT, AGENT_LENS_PROMPT, AGENT_RESEARCH_PROMPT, AGENT_ARCHITECT_PROMPT, AGENT_ARCHITECT_DOCUMENTARY_PROMPT, AGENT_SCRIPTWRITER_PROMPT, AGENT_DOCUMENTARY_WRITER_PROMPT, CHARS_PER_SECOND, MIN_BLOCK_DURATION_SEC, IMAGE_GEN_MODEL, IMAGE_GEN_PROMPT_PREFIX, API_RETRY_COUNT, API_RETRY_BASE_DELAY_MS, AGENT_MODELS } from "../constants";
-import { ResearchDossier, ScriptBlock, TopicSuggestion, ProjectType } from "../types";
+import { AGENT_SCOUT_PROMPT, AGENT_LENS_PROMPT, AGENT_RESEARCH_PROMPT, AGENT_ARCHITECT_PROMPT, AGENT_ARCHITECT_DOCUMENTARY_PROMPT, AGENT_SCRIPTWRITER_PROMPT, AGENT_DOCUMENTARY_WRITER_PROMPT, AGENT_SEO_PROMPT, CHARS_PER_SECOND, MIN_BLOCK_DURATION_SEC, IMAGE_GEN_MODEL, IMAGE_GEN_PROMPT_PREFIX, API_RETRY_COUNT, API_RETRY_BASE_DELAY_MS, AGENT_MODELS } from "../constants";
+import { ResearchDossier, ScriptBlock, TopicSuggestion, ProjectType, SeoPackage } from "../types";
 import { logger } from "./logger";
 
 // API client factory.
@@ -593,6 +593,37 @@ export const generateImageForBlock = async (prompt: string): Promise<string | nu
     logger.error("Image generation failed", { message, prompt: prompt.substring(0, 80) });
     return null;
   }
+};
+
+export const runSEOAgent = async (
+  topic: string,
+  radarOutput: string | undefined,
+  script: ScriptBlock[],
+  signal?: AbortSignal
+): Promise<SeoPackage | null> => {
+  const ai = getClient();
+  const model = AGENT_MODELS.SCOUT; // Flash is sufficient for SEO generation
+  const scriptExcerpt = [
+    ...script.slice(0, 10),
+    ...script.slice(-10),
+  ].map(b => `[${b.blockType}] ${b.audioScript}`).join('\n');
+
+  const contents = [
+    AGENT_SEO_PROMPT,
+    `\nTOPIC: ${topic}`,
+    radarOutput ? `\nRADAR HYPOTHESES:\n${radarOutput.substring(0, 1500)}` : '',
+    `\nSCRIPT EXCERPT (first+last 10 blocks):\n${scriptExcerpt}`,
+  ].join('');
+
+  return withRetry(async () => {
+    const response = await ai.models.generateContent({
+      model,
+      contents,
+      config: { responseMimeType: 'application/json' },
+    });
+    const text = response.text ?? '';
+    return safeJsonParse<SeoPackage>(text, 'SEO Agent');
+  }, 'runSEOAgent', signal);
 };
 
 export const generatePreviewImage = async (

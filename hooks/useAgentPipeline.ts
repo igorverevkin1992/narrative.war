@@ -9,6 +9,7 @@ import {
   calculateDurationAndRetiming,
   generateImageForBlock,
   generatePreviewImage,
+  runSEOAgent,
 } from '../services/geminiService';
 import { AgentType, SystemState, TopicSuggestion, ResearchDossier, ScriptBlock, HistoryItem } from '../types';
 import { Action } from '../store/reducer';
@@ -383,6 +384,27 @@ export function useAgentPipeline({
     executeRadar(suggestion.title, richContext);
   }, [dispatch, addLog, executeRadar]);
 
+  const executeSEO = useCallback(async () => {
+    const { topic, radarOutput, finalScript } = stateRef.current;
+    if (!finalScript?.length) return;
+    const controller = newController();
+    addLog('>>> SEO AGENT: Generating YouTube SEO package...');
+    dispatch({ type: 'MERGE', partial: { isProcessing: true } });
+    try {
+      const pkg = await runSEOAgent(topic, radarOutput, finalScript, controller.signal);
+      if (pkg) {
+        dispatch({ type: 'MERGE', partial: { seoPackage: pkg, isProcessing: false } });
+        addLog('>>> SEO AGENT: Package generated successfully.');
+      } else {
+        dispatch({ type: 'MERGE', partial: { isProcessing: false, lastError: 'SEO Agent returned no data.' } });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      dispatch({ type: 'MERGE', partial: { isProcessing: false, lastError: `SEO Agent failed: ${msg}` } });
+      addLog(`>>> SEO AGENT ERROR: ${msg}`);
+    }
+  }, [dispatch, addLog, newController]);
+
   return {
     executeScout,
     executeRadar,
@@ -397,5 +419,6 @@ export function useAgentPipeline({
     handleApproveArchitect,
     handleSelectTopic,
     cancelCurrentOperation,
+    executeSEO,
   };
 }

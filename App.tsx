@@ -12,6 +12,7 @@ import RichTextDisplay from './components/RichTextDisplay';
 import StepEditor from './components/StepEditor';
 import ErrorToast from './components/ErrorToast';
 import ThumbnailPreview from './components/ThumbnailPreview';
+import SeoDisplay from './components/SeoDisplay';
 
 // --- ICONS ---
 const ScoutIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>;
@@ -313,15 +314,32 @@ function App() {
           )}
 
           {state.finalScript && (
-            <ScriptDisplay
-              script={state.finalScript}
-              topic={state.topic}
-              projectType={state.projectType}
-              radarContent={state.radarOutput}
-              analystContent={state.researchDossier}
-              architectContent={state.structureMap}
-              onGenerateImage={onImageGen}
-            />
+            <>
+              <ScriptDisplay
+                script={state.finalScript}
+                topic={state.topic}
+                projectType={state.projectType}
+                radarContent={state.radarOutput}
+                analystContent={state.researchDossier}
+                architectContent={state.structureMap}
+                onGenerateImage={onImageGen}
+                dispatch={dispatch}
+              />
+              <div className="flex justify-center">
+                <button
+                  onClick={pipeline.executeSEO}
+                  disabled={state.isProcessing}
+                  className={`px-6 py-3 rounded font-bold uppercase tracking-widest transition-all border text-sm flex items-center gap-2 ${
+                    state.isProcessing
+                      ? 'border-mw-slate/30 text-mw-slate cursor-not-allowed opacity-50'
+                      : 'border-yellow-500/50 text-yellow-300 hover:bg-yellow-900/30 hover:border-yellow-400'
+                  }`}
+                >
+                  {state.isProcessing ? 'Processing...' : 'Generate SEO Package'}
+                </button>
+              </div>
+              {state.seoPackage && <SeoDisplay seo={state.seoPackage} />}
+            </>
           )}
         </div>
       </main>
