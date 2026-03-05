@@ -273,6 +273,31 @@ SCRIPTING RULES (THE FORENSIC FORMULA):
 2. VISUAL DENSITY: Every sentence must have a visual correlate (Side-by-side, highlighted text, news clippings).
 3. AVOID BUREAUCRACY: When showing a document, show only the crucial highlighted sentence. Keep it moving.
 
+RHETORICAL VARIETY — MANDATORY:
+
+ANTI-REPETITION LAW:
+1. "X WASN'T Y, IT WAS Z" INVERSION — MAXIMUM ONCE per 10 consecutive blocks. This is a scalpel, not a paintbrush.
+   Any sentence matching the pattern "[Subject] wasn't/isn't [A]. [Subject/It] was/is [B]." counts against this limit.
+   If you have already used this structure in the last 10 blocks — you are FORBIDDEN from using it again.
+
+2. NO SEMANTIC REPETITION — Each block must introduce NEW information, a NEW piece of evidence, or a NEW argument angle.
+   BEFORE writing any block, ask: "Does this add something the viewer did not know 30 seconds ago?"
+   If the block is a rephrasing of the previous block's idea — DELETE it and write something new.
+
+3. SENTENCE STRUCTURE ROTATION — Rotate through these techniques. NEVER use the same technique twice in consecutive blocks:
+   a) EVIDENCE ANCHOR: "In [year], [specific document/fact]. The record is clear."
+   b) QUESTION HOOK: "Why does this [contract/document/statement] have [anomaly]? Nobody at the press conference asked."
+   c) DATA DROP: "[Number] countries. [Number] years. One beneficiary."
+   d) ZOOM OUT: "Step back. This is not about [X]. This is about who controls [Y]."
+   e) CONTRADICTION REVEAL: "They said [A] publicly. The internal cable said the opposite."
+   f) TIMELINE ANCHOR: "[N] months before [event], [something happened]."
+   g) WITNESS ANCHOR: "The people who built this system knew exactly what it would be used for."
+   h) ATMOSPHERIC: "[Setting detail]. [What it implies]."
+   i) DIRECT STATEMENT: "[Claim]. That is not in dispute. What [related thing] is — is."
+
+4. INTRA-BLOCK RULE: A single audioScript block may not contain more than ONE inversion sentence ("wasn't/isn't").
+   All other sentences in that block must use different techniques from the rotation list above.
+
 STRICT RULES:
 1. NO "HELLO". Start immediately with the Visual Anchor.
 2. NO "IN THIS VIDEO".
@@ -414,6 +439,31 @@ SCRIPTING RULES:
 1. First block = ACT HEADER title card (see rule above). Second block starts content.
 2. End this act on tension, revelation, or a question that propels into the next act.
 3. No "In this part of the film."
+
+RHETORICAL VARIETY — MANDATORY:
+
+ANTI-REPETITION LAW:
+1. "X WASN'T Y, IT WAS Z" INVERSION — MAXIMUM ONCE per 10 consecutive blocks. This is a scalpel, not a paintbrush.
+   Any sentence matching the pattern "[Subject] wasn't/isn't [A]. [Subject/It] was/is [B]." counts against this limit.
+   If you have already used this structure in the last 10 blocks — you are FORBIDDEN from using it again.
+
+2. NO SEMANTIC REPETITION — Each block must introduce NEW information, a NEW piece of evidence, or a NEW argument angle.
+   BEFORE writing any block, ask: "Does this add something the viewer did not know 30 seconds ago?"
+   If the block is a rephrasing of the previous block's idea — DELETE it and write something new.
+
+3. SENTENCE STRUCTURE ROTATION — Rotate through these techniques. NEVER use the same technique twice in consecutive blocks:
+   a) EVIDENCE ANCHOR: "In [year], [specific document/fact]. The record is clear."
+   b) QUESTION HOOK: "Why does this [document/statement] have [anomaly]? Nobody at the press conference asked."
+   c) DATA DROP: "[Number] countries. [Number] years. One beneficiary."
+   d) ZOOM OUT: "Step back. This is not about [X]. This is about who controls [Y]."
+   e) CONTRADICTION REVEAL: "They said [A] publicly. The internal cable said the opposite."
+   f) TIMELINE ANCHOR: "[N] months before [event], [something happened]."
+   g) WITNESS ANCHOR: "The people who built this system knew exactly what it would be used for."
+   h) ATMOSPHERIC: "[Setting detail]. [What it implies]."
+   i) DIRECT STATEMENT: "[Claim]. That is not in dispute. What [related thing] is — is."
+
+4. INTRA-BLOCK RULE: A single audioScript block may not contain more than ONE inversion sentence ("wasn't/isn't").
+   All other sentences in that block must use different techniques from the rotation list above.
 
 OUTPUT FORMAT:
 Return a valid JSON array of 20–25 ScriptBlock objects for THIS ACT ONLY.
