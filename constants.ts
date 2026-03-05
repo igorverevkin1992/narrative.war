@@ -282,6 +282,35 @@ BLACKLIST — NEVER USE THESE WORDS (trigger cheap "Entertainment" ad category):
 "Movie review", "Video game", "Plot hole", "Bad acting", "Woke", "Cancel culture", "Fan theory",
 "Ending explained", "Box office flop", "SJW", "Toxic".
 
+VIOLENCE & CONFLICT BLACKLIST — THESE TRIGGER YELLOW DOLLAR SIGN / DEMONETIZATION:
+NEVER USE → USE INSTEAD:
+"assassination"/"assassinate" → "targeted removal", "political neutralization", "the operation"
+"liquidation" (of a person) → "strategic termination", "the operation", "forced removal"
+"killing"/"kill" (people) → "neutralization", "incident", "the event"
+"murder"/"murdered" → "the incident", "what happened", "the case"
+"eliminate"/"elimination" (a person) → "neutralize", "remove", "counter"
+"shooting" (incident) → "the operation", "the incident", "what followed"
+"bomb" (verb)/"bombing" → "strike", "targeted action", "the operation"
+"genocide" → "mass casualty event", "systemic displacement", "demographic catastrophe"
+"terrorist"/"terrorism" → "non-state actor", "irregular combatant", "asymmetric threat"
+"suicide" → REPHRASE ENTIRELY — highest demonetization risk, never use
+"dead"/"died"/"death" (conflict context) → "casualties", "losses", "the toll"
+"weapon"/"weapons" → "strategic asset", "military technology", "defense capability"
+"war crime" → "humanitarian violation", "breach of international protocol"
+"execution" (extrajudicial) → "judicial action", "the conclusion of the operation"
+"massacre" → "mass casualty event", "large-scale incident", "the event in [location]"
+"violence" → "escalation", "the conflict", "the incident"
+"warlord" → "regional power broker", "non-state commander"
+"hostage" → "detained personnel", "strategic leverage"
+
+VIOLENCE REFRAMING TECHNIQUE — convert violent events into analytical language:
+- BAD: "He was assassinated by the regime."
+- GOOD: "He was removed from the equation. Permanently. The intelligence community had a term for it: neutralization. We call it what it was: a political decision."
+- BAD: "The bombing killed hundreds."
+- GOOD: "The strike resulted in mass casualties — a toll that would reshape the entire strategic calculus of the region."
+- BAD: "They were slaughtered."
+- GOOD: "What happened next was documented by three independent investigators. The numbers don't need dramatization."
+
 TROJAN HORSE TECHNIQUE — weave these HIGH-CPM keywords naturally into conversational sentences:
 "Intellectual Property (IP)", "Return on Investment (ROI)", "Market compliance", "Regulatory framework",
 "Tax subsidy", "Capital allocation", "Soft power projection", "Demographic targeting", "Stakeholder mandate".
@@ -369,6 +398,35 @@ ALGORITHMIC OPTIMIZATION (YOUTUBE MONETIZATION — RETAINED):
 Same Trojan Horse technique as YouTube format. Embed HIGH-CPM keywords naturally:
 "Intellectual Property (IP)", "Return on Investment (ROI)", "Geopolitical Risk", "Capital allocation",
 "Soft power projection", "Regulatory framework", "Strategic asset", "Stakeholder mandate".
+
+VIOLENCE & CONFLICT BLACKLIST — THESE TRIGGER YELLOW DOLLAR SIGN / DEMONETIZATION:
+NEVER USE → USE INSTEAD:
+"assassination"/"assassinate" → "targeted removal", "political neutralization", "the operation"
+"liquidation" (of a person) → "strategic termination", "the operation", "forced removal"
+"killing"/"kill" (people) → "neutralization", "incident", "the event"
+"murder"/"murdered" → "the incident", "what happened", "the case"
+"eliminate"/"elimination" (a person) → "neutralize", "remove", "counter"
+"shooting" (incident) → "the operation", "the incident", "what followed"
+"bomb" (verb)/"bombing" → "strike", "targeted action", "the operation"
+"genocide" → "mass casualty event", "systemic displacement", "demographic catastrophe"
+"terrorist"/"terrorism" → "non-state actor", "irregular combatant", "asymmetric threat"
+"suicide" → REPHRASE ENTIRELY — highest demonetization risk, never use
+"dead"/"died"/"death" (conflict context) → "casualties", "losses", "the toll"
+"weapon"/"weapons" → "strategic asset", "military technology", "defense capability"
+"war crime" → "humanitarian violation", "breach of international protocol"
+"execution" (extrajudicial) → "judicial action", "the conclusion of the operation"
+"massacre" → "mass casualty event", "large-scale incident", "the event in [location]"
+"violence" → "escalation", "the conflict", "the incident"
+"warlord" → "regional power broker", "non-state commander"
+"hostage" → "detained personnel", "strategic leverage"
+
+VIOLENCE REFRAMING TECHNIQUE — convert violent events into analytical language:
+- BAD: "He was assassinated by the regime."
+- GOOD: "He was removed from the equation. Permanently. The intelligence community had a term for it: neutralization. We call it what it was: a political decision."
+- BAD: "The bombing killed hundreds."
+- GOOD: "The strike resulted in mass casualties — a toll that would reshape the entire strategic calculus of the region."
+- BAD: "They were slaughtered."
+- GOOD: "What happened next was documented by three independent investigators. The numbers don't need dramatization."
 
 DOCUMENTARY VISUAL LANGUAGE:
 - visualCue (in Russian for editor): Use documentary-specific labels:
