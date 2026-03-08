@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ScriptBlock, ProjectType } from '../types';
+import JSZip from 'jszip';
+import { ScriptBlock, ProjectType, SeoPackage } from '../types';
 import { APP_VERSION, CHARS_PER_SECOND, PROJECT_CONFIGS } from '../constants';
 import { Action } from '../store/reducer';
 
@@ -13,6 +14,7 @@ interface ScriptDisplayProps {
   radarContent?: string;
   analystContent?: string;
   architectContent?: string;
+  seo?: SeoPackage;
   onGenerateImage?: (index: number) => void;
   dispatch?: React.Dispatch<Action>;
 }
@@ -33,6 +35,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   radarContent,
   analystContent,
   architectContent,
+  seo,
   onGenerateImage,
   dispatch,
 }) => {
@@ -498,6 +501,53 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
     }
   };
 
+  const handleDownloadAll = async () => {
+    try {
+      setExportError(null);
+      const zip = new JSZip();
+      const fn = safeFilename;
+
+      // script.json
+      zip.file(`SCRIPT_${fn}.json`, JSON.stringify(script, null, 2));
+
+      // script.csv
+      const csvHeader = 'Timecode,BlockType,Visual,Audio (EN),Audio (RU)';
+      const csvRows = script.map(b =>
+        [b.timecode, b.blockType, b.visualCue, b.audioScript, b.russianScript || '']
+          .map(v => `"${(v || '').replace(/"/g, '""')}"`).join(',')
+      );
+      zip.file(`SCRIPT_${fn}.csv`, [csvHeader, ...csvRows].join('\n'));
+
+      // SRT subtitles
+      const buildSrt = (lang: 'en' | 'ru') =>
+        script.map((b, i) => {
+          const { start, end } = timecodeToSrt(b.timecode);
+          const text = lang === 'en' ? b.audioScript : (b.russianScript || b.audioScript);
+          return text?.trim() ? `${i + 1}\n${start} --> ${end}\n${text.trim()}` : null;
+        }).filter(Boolean).join('\n\n');
+      zip.file(`SUBTITLES_EN_${fn}.srt`, buildSrt('en'));
+      zip.file(`SUBTITLES_RU_${fn}.srt`, buildSrt('ru'));
+
+      // Research docs
+      if (radarContent) zip.file(`RADAR_${fn}.txt`, radarContent);
+      if (analystContent) zip.file(`DOSSIER_${fn}.txt`, typeof analystContent === 'string' ? analystContent : JSON.stringify(analystContent, null, 2));
+      if (architectContent) zip.file(`BLUEPRINT_${fn}.txt`, architectContent);
+      if (seo) zip.file(`SEO_${fn}.json`, JSON.stringify(seo, null, 2));
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${fn}_package.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportError(`Download All failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    }
+  };
+
   return (
     <>
       {/* Lightbox Modal for Image Viewing */}
@@ -620,6 +670,28 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
                 Assets (.csv)
               </button>
             )}
+            <button
+              onClick={() => {
+                const blob = new Blob([JSON.stringify(script, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `SCRIPT_${safeFilename}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-500/30 text-indigo-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
+            >
+              Script (.json)
+            </button>
+            <button
+              onClick={handleDownloadAll}
+              className="flex items-center gap-2 px-4 py-2 bg-cyan-900/40 hover:bg-cyan-800/60 border border-cyan-500/50 text-cyan-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
+            >
+              ⬇ Download All (.zip)
+            </button>
           </div>
 
           {/* Export error */}
@@ -713,24 +785,26 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
           {showAudit && (() => {
             const BLACKLIST = ['assassination', 'killing', 'murdered', 'suicide', 'genocide', 'massacre', 'terrorist', 'bomb', 'explosive', 'torture', 'rape', 'shooter', 'sniper', 'liquidation', 'eliminate', 'execution', 'decapitation', 'shooting', 'fatality', 'fatalities', 'slaughter'];
             const auditIssues: { type: 'warn' | 'ok'; msg: string }[] = [];
-            const allText = script.map(b => (b.audioScript || '') + ' ' + (b.russianScript || '')).join(' ').toLowerCase();
+            const allText = script.map(b => (b.audioScript || '')).join(' ').toLowerCase();
             const foundBlacklist = BLACKLIST.filter(w => allText.includes(w));
             if (foundBlacklist.length) auditIssues.push({ type: 'warn', msg: `Blacklisted words: ${foundBlacklist.join(', ')}` });
             const shortBlocks = script.filter(b => (b.audioScript || '').split(/\s+/).filter(Boolean).length < 30);
             if (shortBlocks.length) auditIssues.push({ type: 'warn', msg: `${shortBlocks.length} block(s) with < 30 words` });
             if (script[0]?.blockType !== 'HOOK') auditIssues.push({ type: 'warn', msg: 'First block is not HOOK' });
             if (script[script.length - 1]?.blockType !== 'OUTRO') auditIssues.push({ type: 'warn', msg: 'Last block is not OUTRO' });
+            const maxSales = projectType === 'documentary' ? 4 : projectType === 'short_doc' ? 2 : 1;
             const salesCount = script.filter(b => b.blockType === 'SALES').length;
             if (salesCount === 0) auditIssues.push({ type: 'warn', msg: 'No SALES blocks' });
-            if (salesCount > 5) auditIssues.push({ type: 'warn', msg: `${salesCount} SALES blocks (> 5)` });
+            if (salesCount > maxSales) auditIssues.push({ type: 'warn', msg: `${salesCount} SALES blocks (max ${maxSales})` });
             let maxRun = 0, curRun = 1;
             for (let i = 1; i < script.length; i++) {
               if (script[i].blockType === script[i-1].blockType) { curRun++; maxRun = Math.max(maxRun, curRun); } else { curRun = 1; }
             }
             if (maxRun > 4) auditIssues.push({ type: 'warn', msg: `${maxRun} consecutive identical block types` });
             const estMin = parseFloat(estMinutes);
-            if (estMin >= 8 && estMin <= 20) auditIssues.push({ type: 'ok', msg: `Duration ${estMinutes} min — OK` });
-            else auditIssues.push({ type: 'warn', msg: `Duration ${estMinutes} min — out of 8–20 min target` });
+            const [minDur, maxDur, durLabel] = projectType === 'documentary' ? [55, 9999, '55+ min'] : [8, 20, '8–20 min'];
+            if (estMin >= minDur && estMin <= maxDur) auditIssues.push({ type: 'ok', msg: `Duration ${estMinutes} min — OK` });
+            else auditIssues.push({ type: 'warn', msg: `Duration ${estMinutes} min — out of ${durLabel} target` });
             auditIssues.push({ type: 'ok', msg: `${script.length} total blocks` });
             if (!foundBlacklist.length) auditIssues.push({ type: 'ok', msg: 'No blacklisted words' });
             return (
@@ -786,8 +860,8 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
               <tr className="bg-mw-black text-xs uppercase tracking-wider text-mw-slate border-b border-mw-slate/50">
                 <th className="p-4 w-28">Timing</th>
                 <th className="p-4 w-1/4">Visual (AI Storyboard)</th>
-                <th className="p-4 w-1/3">Audio (EN)</th>
-                <th className="p-4 w-1/3">Audio (RU)</th>
+                <th className="p-4 w-2/3">Audio (EN)</th>
+                {/* <th className="p-4 w-1/3">Audio (RU)</th> */}
               </tr>
             </thead>
             <tbody className="divide-y divide-mw-slate/20 font-mono text-sm">
@@ -924,6 +998,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
                         </div>
                       )}
                     </td>
+                    {/* Russian script column hidden — re-enable when needed
                     <td className="p-4 align-top text-gray-400 leading-relaxed italic border-l border-mw-slate/10">
                       "{block.russianScript}"
                       {hasTranslationIssue && (
@@ -932,6 +1007,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
                         </span>
                       )}
                     </td>
+                    */}
                   </tr>
                 );
               })}

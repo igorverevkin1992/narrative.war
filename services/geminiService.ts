@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { AGENT_SCOUT_PROMPT, AGENT_LENS_PROMPT, AGENT_RESEARCH_PROMPT, AGENT_ARCHITECT_PROMPT, AGENT_ARCHITECT_DOCUMENTARY_PROMPT, AGENT_SCRIPTWRITER_PROMPT, AGENT_DOCUMENTARY_WRITER_PROMPT, AGENT_SEO_PROMPT, CHARS_PER_SECOND, MIN_BLOCK_DURATION_SEC, IMAGE_GEN_MODEL, IMAGE_GEN_PROMPT_PREFIX, API_RETRY_COUNT, API_RETRY_BASE_DELAY_MS, AGENT_MODELS } from "../constants";
+import { AGENT_SCOUT_PROMPT, AGENT_LENS_PROMPT, AGENT_RESEARCH_PROMPT, AGENT_ARCHITECT_PROMPT, AGENT_ARCHITECT_DOCUMENTARY_PROMPT, AGENT_ARCHITECT_SHORT_DOC_PROMPT, AGENT_SCRIPTWRITER_PROMPT, AGENT_DOCUMENTARY_WRITER_PROMPT, AGENT_SHORT_DOC_WRITER_PROMPT, AGENT_SEO_PROMPT, AGENT_SCRIPT_REWRITER_PROMPT, AGENT_AUDIT_FIX_PROMPT, AGENT_OUTLINE_PROMPT, AGENT_DOC_OUTLINE_PROMPT, AGENT_SHORT_DOC_OUTLINE_PROMPT, AGENT_DOC_CIRCLE_PROMPT, AGENT_SHORT_DOC_CIRCLE_PROMPT, AGENT_ACT_PLANNING_PROMPT, AGENT_SHORT_DOC_ACT_PLANNING_PROMPT, CHARS_PER_SECOND, MIN_BLOCK_DURATION_SEC, IMAGE_GEN_MODEL, IMAGE_GEN_PROMPT_PREFIX, API_RETRY_COUNT, API_RETRY_BASE_DELAY_MS, AGENT_MODELS } from "../constants";
 import { ResearchDossier, ScriptBlock, TopicSuggestion, ProjectType, SeoPackage } from "../types";
 import { logger } from "./logger";
 
@@ -233,15 +233,21 @@ export const calculateDurationAndRetiming = (script: ScriptBlock[]): ScriptBlock
 // These are not exported — RADAR/ARCHITECT still return `string` to the pipeline.
 // Using responseSchema forces the model to output valid JSON; we then format to readable text.
 
-interface RadarHypothesis { theory: string; proof: string; }
-interface RadarAnalysis   { strategicOverview: string; hypotheses: RadarHypothesis[]; }
+interface RadarDirective  { query: string; rationale: string; }
+interface RadarAnalysis   { strategicOverview: string; searchDirectives: RadarDirective[]; }
 interface ArchitectBlock  { block: string; timecode: string; description: string; }
 interface ArchitectPlan   { title: string; thumbnailConcept: string; visualAnchor: string; structure: ArchitectBlock[]; }
 
 function formatRadarOutput(r: RadarAnalysis): string {
-  let out = `STRATEGIC OVERVIEW:\n${r.strategicOverview}\n\n/// VIDEO HYPOTHESES`;
-  r.hypotheses.forEach((h, i) => {
-    out += `\n\nHYPOTHESIS ${i + 1}:\nTHEORY: ${h.theory}\nPROOF:  ${h.proof}`;
+  let out = `STRATEGIC OVERVIEW:
+${r.strategicOverview}
+
+/// SEARCH DIRECTIVES`;
+  r.searchDirectives.forEach((d, i) => {
+    out += `
+
+[${i + 1}] QUERY: "${d.query}"
+    RATIONALE: ${d.rationale}`;
   });
   return out;
 }
@@ -277,10 +283,11 @@ export const runScoutAgent = async (signal?: AbortSignal): Promise<TopicSuggesti
     // googleSearch grounding is incompatible with responseMimeType/responseSchema —
     // use free-text response and extract JSON manually.
     // safetySettings BLOCK_NONE required: geopolitical/military research triggers default filters.
-    const today = new Date().toISOString().slice(0, 10); // e.g. "2026-03-04"
+    const today = new Date().toISOString().slice(0, 10); // e.g. "2026-03-08"
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const response = await ai.models.generateContent({
       model,
-      contents: `TODAY'S DATE: ${today}. All events, news, and dates you mention MUST be in ${today.slice(0, 4)}.\n\n${AGENT_SCOUT_PROMPT}`,
+      contents: `TODAY'S DATE: ${today}. SEARCH WINDOW: ${weekAgo} to ${today} (last 7 days). Search for entertainment media released OR going viral during this period.\n\n${AGENT_SCOUT_PROMPT.replace(/__WEEK__/g, `${weekAgo} to ${today}`)}`,
       config: {
         tools,
         abortSignal: signal,
@@ -295,7 +302,15 @@ export const runScoutAgent = async (signal?: AbortSignal): Promise<TopicSuggesti
 
     const text = extractResponseText(response, 'Scout');
     if (!text) throw new Error("Scout returned empty intel.");
-    return extractJson<TopicSuggestion[]>(text, 'Scout');
+    const topics = extractJson<TopicSuggestion[]>(text, 'Scout');
+
+    // Build Google Search URLs from the model's own searchQuery field (reliable, always relevant)
+    return topics.map(topic => ({
+      ...topic,
+      sourceUrl: topic.searchQuery
+        ? `https://www.google.com/search?q=${encodeURIComponent(topic.searchQuery)}`
+        : undefined,
+    }));
   }, 'runScoutAgent', signal);
 };
 
@@ -303,41 +318,28 @@ export const runRadarAgent = async (topic: string, signal?: AbortSignal): Promis
   const model = AGENT_MODELS.RADAR;
   return withRetry(async () => {
     const ai = getClient();
-    const response = await ai.models.generateContent({
+    const stream = await ai.models.generateContentStream({
       model,
-      contents: `TOPIC: ${topic}\n\n${AGENT_LENS_PROMPT}`,
+      contents: `TOPIC: ${topic}
+
+${AGENT_LENS_PROMPT}`,
       config: {
         temperature: 0.7,
         abortSignal: signal,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            strategicOverview: { type: Type.STRING },
-            hypotheses: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  theory: { type: Type.STRING },
-                  proof:  { type: Type.STRING },
-                },
-                required: ["theory", "proof"],
-              },
-            },
-          },
-          required: ["strategicOverview", "hypotheses"],
-        },
       }
     });
-    const text = response.text;
-    if (!text) throw new Error("Radar returned empty analysis.");
-    const parsed = safeJsonParse<RadarAnalysis>(text, 'Radar');
+    let fullText = '';
+    for await (const chunk of stream) {
+      if (signal?.aborted) throw new Error('Operation cancelled by user.');
+      fullText += chunk.text ?? '';
+    }
+    if (!fullText) throw new Error('Radar returned empty analysis.');
+    const parsed = safeJsonParse<RadarAnalysis>(fullText, 'Radar');
     return formatRadarOutput(parsed);
   }, 'runRadarAgent', signal);
 };
 
-export const runAnalystAgent = async (topic: string, radarAnalysis: string, signal?: AbortSignal): Promise<ResearchDossier> => {
+export const runAnalystAgent = async (topic: string, radarAnalysis: string, signal?: AbortSignal, scoutHook?: string): Promise<ResearchDossier> => {
   const model = AGENT_MODELS.ANALYST;
   return withRetry(async () => {
     const ai = getClient();
@@ -346,9 +348,17 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string, sign
     // safetySettings caused TCP disconnect on Pro models; removed.
     // googleSearch works on gemini-3-pro-preview (3.0), was issue only with 3.1-pro.
     const tools = getToolsForModel(model);
+    const primaryEventBlock = scoutHook
+      ? `PRIMARY EVENT — THIS IS THE ACTUAL STORY (anchor ALL research to this specific event):\n${scoutHook}\n\nSearch for this EXACT event first. Find the specific post, video, or publication. Historical context is secondary — never let secondary evidence replace the primary event.\n\n`
+      : '';
     const response = await ai.models.generateContent({
       model,
-      contents: `TOPIC: ${topic}\n\nLENS ANALYSIS: ${radarAnalysis}\n\n${AGENT_RESEARCH_PROMPT}`,
+      contents: `CRITICAL TOPIC LOCK — read before anything else:\nResearch EXCLUSIVELY the following topic. If the Lens Analysis mentions related films, events, or institutions, use them as context only — do NOT redirect research to them.\nTOPIC: ${topic}\n\n${primaryEventBlock}SEARCH DIRECTIVES — execute these exact queries first:
+${radarAnalysis}
+
+IMPORTANT: The queries above are your starting search terms. Execute them literally. Do NOT research events or films not mentioned in the PRIMARY EVENT or queries above.
+
+${AGENT_RESEARCH_PROMPT}`,
       config: {
         tools,
         abortSignal: signal,
@@ -392,7 +402,11 @@ export const runAnalystAgent = async (topic: string, radarAnalysis: string, sign
 
 export const runArchitectAgent = async (dossier: string, projectType: ProjectType = 'youtube', signal?: AbortSignal): Promise<{ structure: string; thumbnailConcept: string; acts?: ArchitectBlock[] }> => {
   const model = AGENT_MODELS.ARCHITECT;
-  const prompt = projectType === 'documentary' ? AGENT_ARCHITECT_DOCUMENTARY_PROMPT : AGENT_ARCHITECT_PROMPT;
+  const prompt = projectType === 'documentary'
+    ? AGENT_ARCHITECT_DOCUMENTARY_PROMPT
+    : projectType === 'short_doc'
+    ? AGENT_ARCHITECT_SHORT_DOC_PROMPT
+    : AGENT_ARCHITECT_PROMPT;
   return withRetry(async () => {
     const ai = getClient();
 
@@ -432,9 +446,144 @@ export const runArchitectAgent = async (dossier: string, projectType: ProjectTyp
       structure: formatArchitectOutput(parsed),
       thumbnailConcept: parsed.thumbnailConcept,
     };
-    if (projectType === 'documentary') result.acts = parsed.structure;
+    // Documentary acts now come from DOC_CIRCLE agent, not Architect
     return result;
   }, 'runArchitectAgent', signal);
+};
+
+// --- OUTLINER: Generates numbered scene outline with setup/payoff arcs ---
+export const runOutlineAgent = async (
+  structure: string,
+  dossier: string,
+  signal?: AbortSignal,
+  docCircle?: string,
+  actPlanning?: string,
+  projectType: ProjectType = 'documentary',
+): Promise<string> => {
+  const model = AGENT_MODELS.OUTLINER;
+  return withRetry(async () => {
+    const ai = getClient();
+    let prompt: string;
+    if (docCircle || actPlanning) {
+      const docOutlinePrompt = projectType === 'short_doc' ? AGENT_SHORT_DOC_OUTLINE_PROMPT : AGENT_DOC_OUTLINE_PROMPT;
+      prompt = docOutlinePrompt
+        .replace('__ACT_PLANNING__', actPlanning ?? '')
+        .replace('__DOC_CIRCLE__', docCircle ?? '')
+        .replace('__STRUCTURE__', structure)
+        .replace('__DOSSIER__', dossier);
+    } else {
+      prompt = AGENT_OUTLINE_PROMPT
+        .replace('__STRUCTURE__', structure)
+        .replace('__DOSSIER__', dossier)
+        .replace('__DOC_CONTEXT__', '');
+    }
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: { maxOutputTokens: 16384, abortSignal: signal },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("Outliner returned empty response.");
+    return text.trim();
+  }, 'runOutlineAgent', signal);
+};
+
+export type DocCircleResult = { text: string; acts: ArchitectBlock[] };
+
+// Parse the act structure from Part 3 of the DocCircle plain-text output
+function parseDocCircleActs(text: string, projectType: ProjectType = 'documentary'): ArchitectBlock[] {
+  const acts: ArchitectBlock[] = [];
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    // Match "ACT N — ..." at the start of a line
+    const actMatch = line.match(/^ACT\s+(\d+)\s*[—–-]\s*(.+)/);
+    if (!actMatch) continue;
+    const actNum = actMatch[1];
+    // Title is either on the Timecode line after "Title:" or we fall back to the act label
+    const tcLine = (lines[i + 1] ?? '').trim();
+    const tcMatch = tcLine.match(/Timecode:\s*([\d:–\-–]+(?:–[\d:]+)?)/);
+    const titleMatch = tcLine.match(/Title:\s*(.+)/);
+    const summaryLine = (lines[i + 2] ?? '').trim();
+    const summaryMatch = summaryLine.match(/Summary:\s*(.+)/);
+    acts.push({
+      block: `ACT ${actNum}: ${titleMatch?.[1]?.trim() ?? actMatch[2].trim()}`,
+      timecode: tcMatch?.[1]?.trim() ?? `Act ${actNum}`,
+      description: summaryMatch?.[1]?.trim() ?? actMatch[2].trim(),
+    });
+  }
+  // Fallback: if parsing failed, return placeholder acts matching the project type
+  if (acts.length === 0) {
+    const fallbackCount = projectType === 'short_doc' ? 2 : 4;
+    for (let n = 1; n <= fallbackCount; n++) {
+      acts.push({ block: `ACT ${n}`, timecode: '', description: '' });
+    }
+  }
+  return acts;
+}
+
+// --- DOC CIRCLE: Steps 1-4 (drama mandate + conflict arch + global Harmon circle + 4-act division) ---
+export const runDocCircleAgent = async (
+  structure: string,
+  dossier: string,
+  signal?: AbortSignal,
+  projectType: ProjectType = 'documentary',
+): Promise<DocCircleResult> => {
+  const model = AGENT_MODELS.DOC_CIRCLE;
+  return withRetry(async () => {
+    const ai = getClient();
+    const prompt = (projectType === 'short_doc' ? AGENT_SHORT_DOC_CIRCLE_PROMPT : AGENT_DOC_CIRCLE_PROMPT)
+      .replace('__STRUCTURE__', structure)
+      .replace('__DOSSIER__', dossier);
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: { maxOutputTokens: 12288, abortSignal: signal },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("DocCircle returned empty response.");
+    const trimmed = text.trim();
+    return { text: trimmed, acts: parseDocCircleActs(trimmed, projectType) };
+  }, 'runDocCircleAgent', signal);
+};
+
+// --- ACT PLANNING: Steps 4-5 (per-act circles + 32-beat outline) ---
+// Uses streaming to prevent 503 disconnects on large Pro model responses.
+export const runActPlanningAgent = async (
+  docCircle: string,
+  structure: string,
+  dossier: string,
+  signal?: AbortSignal,
+  projectType: ProjectType = 'documentary',
+): Promise<string> => {
+  const model = AGENT_MODELS.ACT_PLANNING;
+  return withRetry(async () => {
+    const ai = getClient();
+    const actPlanningPrompt = projectType === 'short_doc' ? AGENT_SHORT_DOC_ACT_PLANNING_PROMPT : AGENT_ACT_PLANNING_PROMPT;
+    const prompt = actPlanningPrompt
+      .replace('__DOC_CIRCLE__', docCircle)
+      .replace('__STRUCTURE__', structure)
+      .replace('__DOSSIER__', dossier);
+
+    const stream = await ai.models.generateContentStream({
+      model,
+      contents: prompt,
+      config: { abortSignal: signal },
+    });
+
+    let fullText = '';
+    for await (const chunk of stream) {
+      if (signal?.aborted) throw new Error('Operation cancelled by user.');
+      fullText += chunk.text ?? '';
+    }
+
+    if (!fullText) throw new Error("ActPlanning returned empty response.");
+    return fullText.trim();
+  }, 'runActPlanningAgent', signal);
 };
 
 // Writer uses streaming to prevent ERR_CONNECTION_CLOSED on large responses.
@@ -445,6 +594,7 @@ export const runWriterAgent = async (
   dossier: string,
   signal?: AbortSignal,
   onProgress?: (chunks: number) => void,
+  outline?: string,
 ): Promise<ScriptBlock[]> => {
   const model = AGENT_MODELS.WRITER;
   return withRetry(async () => {
@@ -473,9 +623,13 @@ export const runWriterAgent = async (
     // thinkingConfig removed: gemini-3.x uses thinkingLevel (not thinkingBudget),
     // and mixing it with responseSchema + streaming causes immediate server disconnect.
 
+    const outlineSection = outline
+      ? `\n\nAPPROVED SCENE OUTLINE (follow this structure closely):\n${outline}`
+      : '';
+
     const response = await ai.models.generateContentStream({
       model,
-      contents: `DOSSIER: ${dossierStr}\nSTRUCTURE: ${structure}\n\n${enhancedPrompt}`,
+      contents: `DOSSIER: ${dossierStr}\nSTRUCTURE: ${structure}${outlineSection}\n\n${enhancedPrompt}`,
       config: {
         responseMimeType: "application/json",
         maxOutputTokens: 65536,
@@ -518,15 +672,18 @@ export const runWriterAgent = async (
   }, 'runWriterAgent');
 };
 
-// --- DOCUMENTARY: PER-ACT WRITER (streaming, ~20-25 blocks per call) ---
+// --- DOCUMENTARY: PER-ACT WRITER (streaming, ~45-55 blocks per call, ~15 min per act) ---
 export const runDocumentaryActWriter = async (
   act: { block: string; timecode: string; description: string },
   allActs: { block: string; timecode: string; description: string }[],
   dossier: string,
   prevBlocks: ScriptBlock[],
   signal?: AbortSignal,
+  fullOutline?: string,
+  projectType: ProjectType = 'documentary',
 ): Promise<ScriptBlock[] | null> => {
   const model = AGENT_MODELS.WRITER;
+  const writerPrompt = projectType === 'short_doc' ? AGENT_SHORT_DOC_WRITER_PROMPT : AGENT_DOCUMENTARY_WRITER_PROMPT;
 
   // Fetch style context before the retry loop (avoid redundant RAG calls on retry)
   const topicQuery = `${act.block} ${act.description}`.substring(0, 200);
@@ -542,7 +699,11 @@ export const runDocumentaryActWriter = async (
     ? `\n\nLAST BLOCKS FROM PREVIOUS ACT (maintain narrative continuity):\n${prevBlocks.map(b => `"${b.audioScript}"`).join('\n')}`
     : '';
 
-  const contents = `FULL DOCUMENTARY STRUCTURE:\n${structureSummary}\n\nCURRENT ACT TO WRITE: ACT ${actIndex} OF ${allActs.length}\nTITLE: "${act.block}"\nTIMECODE: ${act.timecode}\n${act.description}${prevContext}\n\nRESEARCH DOSSIER:\n${dossier}\n\n${AGENT_DOCUMENTARY_WRITER_PROMPT}\n\n${styleContext ? `=== STYLE REFERENCE: HARRIS/KOZYRA DATA-NOIR ===\n${styleContext}\n================================================` : ''}`;
+  const outlineContext = fullOutline
+    ? `\n\nFULL 32-BEAT OUTLINE (for narrative coherence — ensure this act's blocks align with the beats assigned to it):\n${fullOutline}`
+    : '';
+
+  const contents = `FULL DOCUMENTARY STRUCTURE:\n${structureSummary}\n\nCURRENT ACT TO WRITE: ACT ${actIndex} OF ${allActs.length}\nTITLE: "${act.block}"\nTIMECODE: ${act.timecode}\n${act.description}${prevContext}${outlineContext}\n\nRESEARCH DOSSIER:\n${dossier}\n\n${writerPrompt}\n\n${styleContext ? `=== STYLE REFERENCE: HARRIS/KOZYRA DATA-NOIR ===\n${styleContext}\n================================================` : ''}`;
 
   return withRetry(async () => {
     const ai = getClient();
@@ -552,6 +713,7 @@ export const runDocumentaryActWriter = async (
       config: {
         abortSignal: signal,
         responseMimeType: "application/json",
+        maxOutputTokens: 65536,
       }
     });
 
@@ -593,6 +755,105 @@ export const generateImageForBlock = async (prompt: string): Promise<string | nu
     logger.error("Image generation failed", { message, prompt: prompt.substring(0, 80) });
     return null;
   }
+};
+
+const REWRITER_CHUNK_SIZE = 25;
+
+export const runScriptRewriterAgent = async (
+  script: ScriptBlock[],
+  onChunkDone: (done: number, total: number) => void,
+  signal?: AbortSignal
+): Promise<ScriptBlock[]> => {
+  const ai = getClient();
+  const model = AGENT_MODELS.SCOUT; // Flash: editing task, not generation
+  const result: ScriptBlock[] = [];
+
+  const totalChunks = Math.ceil(script.length / REWRITER_CHUNK_SIZE);
+
+  for (let i = 0; i < totalChunks; i++) {
+    if (signal?.aborted) throw new Error('Operation cancelled by user.');
+
+    const chunkStart = i * REWRITER_CHUNK_SIZE;
+    const contextBlocks = script.slice(Math.max(0, chunkStart - 3), chunkStart);
+    const chunkBlocks = script.slice(chunkStart, chunkStart + REWRITER_CHUNK_SIZE);
+
+    const contents = AGENT_SCRIPT_REWRITER_PROMPT
+      .replace('__CONTEXT__', contextBlocks.length
+        ? JSON.stringify(contextBlocks.map(b => ({ audioScript: b.audioScript, russianScript: b.russianScript, blockType: b.blockType })))
+        : '(none — this is the first batch)')
+      .replace('__BLOCKS__', JSON.stringify(chunkBlocks));
+
+    const chunkResult = await withRetry(async () => {
+      const response = await ai.models.generateContent({
+        model,
+        contents,
+        config: { responseMimeType: 'application/json' },
+      });
+      const text = response.text ?? '';
+      const parsed = safeJsonParse<ScriptBlock[]>(text, `Rewriter chunk ${i + 1}/${totalChunks}`);
+      // Merge: preserve original non-text fields, use rewritten audioScript/russianScript
+      return chunkBlocks.map((orig, idx) => ({
+        ...orig,
+        audioScript: parsed[idx]?.audioScript ?? orig.audioScript,
+        russianScript: parsed[idx]?.russianScript ?? orig.russianScript,
+      }));
+    }, `runScriptRewriterAgent chunk ${i + 1}`, signal);
+
+    result.push(...chunkResult);
+    onChunkDone(result.length, script.length);
+  }
+
+  return result;
+};
+
+export const runAuditFixAgent = async (
+  script: ScriptBlock[],
+  targetIndices: number[],
+  blockIssues: Record<number, string[]>,
+  onProgress: (done: number, total: number) => void,
+  signal?: AbortSignal
+): Promise<ScriptBlock[]> => {
+  const result = [...script];
+  const CHUNK_SIZE = 20;
+  // Split targetIndices into chunks of CHUNK_SIZE
+  const chunks: number[][] = [];
+  for (let i = 0; i < targetIndices.length; i += CHUNK_SIZE) chunks.push(targetIndices.slice(i, i + CHUNK_SIZE));
+
+  let doneCount = 0;
+  for (let ci = 0; ci < chunks.length; ci++) {
+    if (signal?.aborted) throw new Error('Operation cancelled by user.');
+    const idxChunk = chunks[ci];
+    const contextBlocks = script.slice(Math.max(0, idxChunk[0] - 3), idxChunk[0]);
+    const chunkBlocks = idxChunk.map(i => script[i]);
+    const chunkIssues = idxChunk.map((i, pos) => `Block ${pos}: ${(blockIssues[i] ?? []).join(', ')}`).join('\n');
+
+    const prompt = AGENT_AUDIT_FIX_PROMPT
+      .replace('__CONTEXT__', contextBlocks.length
+        ? JSON.stringify(contextBlocks.map(b => ({ audioScript: b.audioScript, russianScript: b.russianScript, blockType: b.blockType })))
+        : '(none)')
+      .replace('__BLOCKS__', JSON.stringify(chunkBlocks))
+      .replace('__BLOCK_ISSUES__', chunkIssues);
+
+    const fixed = await withRetry(async () => {
+      const response = await getClient().models.generateContent({
+        model: AGENT_MODELS.SCOUT,
+        contents: prompt,
+        config: { responseMimeType: 'application/json' },
+      });
+      return safeJsonParse<ScriptBlock[]>(response.text ?? '', `AuditFix chunk ${ci + 1}/${chunks.length}`);
+    }, `runAuditFixAgent chunk ${ci + 1}`, signal);
+
+    idxChunk.forEach((origIdx, pos) => {
+      result[origIdx] = {
+        ...result[origIdx],
+        audioScript: fixed[pos]?.audioScript ?? result[origIdx].audioScript,
+        russianScript: fixed[pos]?.russianScript ?? result[origIdx].russianScript,
+      };
+    });
+    doneCount += idxChunk.length;
+    onProgress(doneCount, targetIndices.length);
+  }
+  return result;
 };
 
 export const runSEOAgent = async (

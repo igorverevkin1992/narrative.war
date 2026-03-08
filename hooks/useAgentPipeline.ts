@@ -4,16 +4,24 @@ import {
   runRadarAgent,
   runAnalystAgent,
   runArchitectAgent,
+  runDocCircleAgent,
+  runActPlanningAgent,
+  runOutlineAgent,
   runWriterAgent,
   runDocumentaryActWriter,
   calculateDurationAndRetiming,
   generateImageForBlock,
   generatePreviewImage,
   runSEOAgent,
+  runScriptRewriterAgent,
+  runAuditFixAgent,
 } from '../services/geminiService';
 import { AgentType, SystemState, TopicSuggestion, ResearchDossier, ScriptBlock, HistoryItem } from '../types';
 import { Action } from '../store/reducer';
 import { AGENT_MODELS, PROJECT_CONFIGS } from '../constants';
+
+// Helper: true for any project type that uses the documentary pipeline (DocCircle → ActPlanning → Outline → multi-pass Writer)
+export const isDocPipeline = (pt: string): boolean => pt === 'documentary' || pt === 'short_doc';
 
 // Helper: converts ResearchDossier object to readable string
 export const formatDossierToString = (d: ResearchDossier): string => {
@@ -72,6 +80,9 @@ interface PipelineOptions {
   setEditedRadar: (v: string) => void;
   setEditedDossier: (v: string) => void;
   setEditedStructure: (v: string) => void;
+  setEditedOutline: (v: string) => void;
+  setEditedDocCircle: (v: string) => void;
+  setEditedActPlanning: (v: string) => void;
 }
 
 export function useAgentPipeline({
@@ -82,6 +93,9 @@ export function useAgentPipeline({
   setEditedRadar,
   setEditedDossier,
   setEditedStructure,
+  setEditedOutline,
+  setEditedDocCircle,
+  setEditedActPlanning,
 }: PipelineOptions) {
   const abortRef = useRef<AbortController | null>(null);
   // Keep latest state accessible inside async callbacks without stale closures
@@ -101,7 +115,7 @@ export function useAgentPipeline({
   }, [cancelCurrentOperation]);
 
   // ── WRITER ─────────────────────────────────────────────────────────────────
-  const executeWriter = useCallback(async (inputStructure: string, inputDossier: string) => {
+  const executeWriter = useCallback(async (inputStructure: string, inputDossier: string, inputOutline?: string) => {
     const controller = newController();
     dispatch({ type: 'MERGE', partial: { structureMap: inputStructure } });
     addLog('>>> ACTIVATING AGENT D: THE WRITER...');
@@ -110,7 +124,7 @@ export function useAgentPipeline({
       AgentType.WRITER,
       () => runWriterAgent(inputStructure, inputDossier, controller.signal, (chunks) => {
         if (chunks % 20 === 0) addLog(`>>> WRITER: Streaming... (${chunks} chunks received)`);
-      }),
+      }, inputOutline),
       dispatch, addLog, controller,
       () => {}
     );
@@ -153,6 +167,7 @@ export function useAgentPipeline({
     addLog(`>>> DOCUMENTARY WRITER: ${acts.length} ACTS TO WRITE.`);
 
     let allBlocks: ScriptBlock[] = [];
+    const { scriptOutline, projectType } = stateRef.current;
 
     for (let i = 0; i < acts.length; i++) {
       if (controller.signal.aborted) return;
@@ -160,7 +175,7 @@ export function useAgentPipeline({
       addLog(`>>> ACT ${i + 1}/${acts.length}: ${acts[i].block}...`);
 
       const actBlocks = await runDocumentaryActWriter(
-        acts[i], acts, inputDossier, allBlocks.slice(-3), controller.signal
+        acts[i], acts, inputDossier, allBlocks.slice(-3), controller.signal, scriptOutline, projectType
       );
 
       if (!actBlocks) {
@@ -176,7 +191,7 @@ export function useAgentPipeline({
     }
 
     const retimed = calculateDurationAndRetiming(allBlocks);
-    const config = PROJECT_CONFIGS['documentary'];
+    const config = PROJECT_CONFIGS[stateRef.current.projectType] ?? PROJECT_CONFIGS['documentary'];
     const totalChars = retimed.reduce((sum, b) => sum + (b.audioScript?.length ?? 0), 0);
     const estMin = (totalChars / 900).toFixed(1);
     addLog(`>>> DOCUMENTARY: ${retimed.length} blocks, ~${estMin} min (${totalChars.toLocaleString()} chars).`);
@@ -188,7 +203,7 @@ export function useAgentPipeline({
 
     addLog('>>> DOCUMENTARY SCRIPT GENERATED.');
     const { topic, history, radarOutput, researchDossier, structureMap, thumbnailConcept } = stateRef.current;
-    const updatedHistory = await saveToHistory(topic, AGENT_MODELS.WRITER, retimed, history, 'documentary', radarOutput, researchDossier, structureMap, thumbnailConcept);
+    const updatedHistory = await saveToHistory(topic, AGENT_MODELS.WRITER, retimed, history, stateRef.current.projectType, radarOutput, researchDossier, structureMap, thumbnailConcept);
 
     dispatch({
       type: 'MERGE', partial: {
@@ -202,6 +217,101 @@ export function useAgentPipeline({
     });
     addLog('>>> SYSTEM STANDBY.');
   }, [newController, dispatch, addLog, saveToHistory]);
+
+  // ── OUTLINER ─────────────────────────────────────────────────────────────────
+  const executeOutline = useCallback(async (
+    inputStructure: string,
+    inputDossier: string,
+    docCircle?: string,
+    actPlanning?: string,
+  ) => {
+    const controller = newController();
+    addLog('>>> ACTIVATING OUTLINER: Generating scene outline...');
+
+    const outline = await runStep(
+      AgentType.OUTLINER,
+      () => runOutlineAgent(inputStructure, inputDossier, controller.signal, docCircle, actPlanning, stateRef.current.projectType),
+      dispatch, addLog, controller,
+      () => {}
+    );
+    if (!outline) return;
+
+    const isSteppable = stateRef.current.isSteppable;
+    addLog(isSteppable
+      ? '>>> OUTLINE READY. Awaiting your approval before writing begins.'
+      : '>>> OUTLINE READY. Auto-continuing to writer...');
+    dispatch({ type: 'MERGE', partial: {
+      scriptOutline: outline,
+      isProcessing: !isSteppable,
+      stepStatus: isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING',
+    }});
+    setEditedOutline(outline);
+    if (!isSteppable) {
+      const { projectType, documentaryActs } = stateRef.current;
+      if (isDocPipeline(projectType) && documentaryActs) {
+        executeDocumentaryWriter(documentaryActs, inputDossier);
+      } else {
+        executeWriter(inputStructure, inputDossier, outline);
+      }
+    }
+  }, [newController, dispatch, addLog, setEditedOutline, executeDocumentaryWriter, executeWriter]);
+
+  // ── ACT PLANNING (Steps 4-5: per-act circles + 32-beat outline) ───────────────
+  const executeActPlanning = useCallback(async (
+    inputDocCircle: string,
+    inputStructure: string,
+    inputDossier: string,
+  ) => {
+    const controller = newController();
+    const { projectType } = stateRef.current;
+    const beatCount = projectType === 'short_doc' ? '16' : '32';
+    addLog(`>>> ACT PLANNING: Building per-act circles + ${beatCount}-beat full outline...`);
+
+    const result = await runStep(
+      AgentType.ACT_PLANNING,
+      () => runActPlanningAgent(inputDocCircle, inputStructure, inputDossier, controller.signal, projectType),
+      dispatch, addLog, controller,
+      () => {}
+    );
+    if (!result) return;
+
+    const isSteppable = stateRef.current.isSteppable;
+    addLog(isSteppable
+      ? `>>> ACT PLANNING READY. Review all ${beatCount} beats before generating full outline.`
+      : '>>> ACT PLANNING READY. Auto-continuing to outline...');
+    dispatch({ type: 'MERGE', partial: {
+      actPlanning: result,
+      isProcessing: !isSteppable,
+      stepStatus: isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING',
+    }});
+    setEditedActPlanning(result);
+    if (!isSteppable) executeOutline(inputStructure, inputDossier, inputDocCircle, result);
+  }, [newController, dispatch, addLog, setEditedActPlanning, executeOutline]);
+
+  // ── DOC CIRCLE (Steps 1-3: conflict arch + global Harmon circle + 4-act division) ──
+  const executeDocCircle = useCallback(async (inputStructure: string, inputDossier: string) => {
+    const controller = newController();
+    addLog('>>> DOC CIRCLE: Generating conflict architecture + global Harmon circle...');
+
+    const result = await runStep(
+      AgentType.DOC_CIRCLE,
+      () => runDocCircleAgent(inputStructure, inputDossier, controller.signal, stateRef.current.projectType),
+      dispatch, addLog, controller,
+      () => {}
+    );
+    if (!result) return;
+
+    const isSteppable = stateRef.current.isSteppable;
+    addLog(`>>> DOC CIRCLE READY. Parsed ${result.acts.length} acts.${isSteppable ? ' Review drama architecture before proceeding.' : ' Auto-continuing...'}`);
+    dispatch({ type: 'MERGE', partial: {
+      docCircle: result.text,
+      documentaryActs: result.acts,
+      isProcessing: !isSteppable,
+      stepStatus: isSteppable ? 'WAITING_FOR_APPROVAL' : 'PROCESSING',
+    }});
+    setEditedDocCircle(result.text);
+    if (!isSteppable) executeActPlanning(result.text, inputStructure, inputDossier);
+  }, [newController, dispatch, addLog, setEditedDocCircle, executeActPlanning]);
 
   // ── ARCHITECT ───────────────────────────────────────────────────────────────
   const executeArchitect = useCallback(async (inputDossier: string) => {
@@ -232,13 +342,13 @@ export function useAgentPipeline({
     });
     setEditedStructure(structure);
     if (!isSteppable) {
-      if (projectType === 'documentary' && acts) {
-        executeDocumentaryWriter(acts, inputDossier);
+      if (isDocPipeline(projectType)) {
+        executeDocCircle(structure, inputDossier);
       } else {
-        executeWriter(structure, inputDossier);
+        executeOutline(structure, inputDossier);
       }
     }
-  }, [newController, dispatch, addLog, setEditedStructure, executeWriter]);
+  }, [newController, dispatch, addLog, setEditedStructure, executeDocCircle, executeOutline]);
 
   // ── ANALYST ─────────────────────────────────────────────────────────────────
   const executeAnalyst = useCallback(async (inputRadar: string) => {
@@ -248,7 +358,7 @@ export function useAgentPipeline({
 
     const dossier = await runStep(
       AgentType.ANALYST,
-      () => runAnalystAgent(stateRef.current.topic, inputRadar, controller.signal),
+      () => runAnalystAgent(stateRef.current.topic, inputRadar, controller.signal, stateRef.current.scoutHook),
       dispatch, addLog, controller,
       () => {}
     );
@@ -362,11 +472,31 @@ export function useAgentPipeline({
 
   const handleApproveArchitect = useCallback((editedStructure: string, dossier: string | undefined) => {
     if (!dossier) return;
+    const { projectType } = stateRef.current;
+    if (isDocPipeline(projectType)) {
+      executeDocCircle(editedStructure, dossier);
+    } else {
+      executeOutline(editedStructure, dossier);
+    }
+  }, [executeDocCircle, executeOutline]);
+
+  const handleApproveDocCircle = useCallback((editedDocCircle: string, structure: string, dossier: string | undefined) => {
+    if (!dossier) return;
+    executeActPlanning(editedDocCircle, structure, dossier);
+  }, [executeActPlanning]);
+
+  const handleApproveActPlanning = useCallback((editedActPlanning: string, docCircle: string, structure: string, dossier: string | undefined) => {
+    if (!dossier) return;
+    executeOutline(structure, dossier, docCircle, editedActPlanning);
+  }, [executeOutline]);
+
+  const handleApproveOutline = useCallback((editedOutline: string, structure: string, dossier: string | undefined) => {
+    if (!dossier) return;
     const { projectType, documentaryActs } = stateRef.current;
-    if (projectType === 'documentary' && documentaryActs) {
+    if (isDocPipeline(projectType) && documentaryActs) {
       executeDocumentaryWriter(documentaryActs, dossier);
     } else {
-      executeWriter(editedStructure, dossier);
+      executeWriter(structure, dossier, editedOutline);
     }
   }, [executeWriter, executeDocumentaryWriter]);
 
@@ -376,11 +506,18 @@ export function useAgentPipeline({
     // state.topic stays as the clean title for display/history/style-fetch.
     const richContext = [
       suggestion.title,
-      suggestion.hook          ? `\nSCOUT HOOK: ${suggestion.hook}` : '',
+      suggestion.hook           ? `\nSCOUT HOOK: ${suggestion.hook}` : '',
       suggestion.narrativeAngle ? `\nNARRATIVE ANGLE: ${suggestion.narrativeAngle}` : '',
-      suggestion.viralFactor   ? `\nVIRAL FACTOR: ${suggestion.viralFactor}` : '',
+      suggestion.viralFactor    ? `\nVIRAL FACTOR: ${suggestion.viralFactor}` : '',
+      suggestion.protagonist    ? `\nPROTAGONIST (real person found by Scout): ${suggestion.protagonist}` : '',
+      suggestion.antagonist     ? `\nANTAGONIST (documented): ${suggestion.antagonist}` : '',
     ].join('');
-    dispatch({ type: 'MERGE', partial: { topic: suggestion.title, currentAgent: 'IDLE' } });
+    const hookWithPeople = [
+      suggestion.hook,
+      suggestion.protagonist ? `\nPROTAGONIST: ${suggestion.protagonist}` : '',
+      suggestion.antagonist  ? `\nANTAGONIST: ${suggestion.antagonist}` : '',
+    ].join('');
+    dispatch({ type: 'MERGE', partial: { topic: suggestion.title, scoutHook: hookWithPeople, currentAgent: 'IDLE' } });
     executeRadar(suggestion.title, richContext);
   }, [dispatch, addLog, executeRadar]);
 
@@ -405,11 +542,125 @@ export function useAgentPipeline({
     }
   }, [dispatch, addLog, newController]);
 
+  // ── SCRIPT REWRITER ─────────────────────────────────────────────────────────
+  const executeRewrite = useCallback(async () => {
+    const { finalScript } = stateRef.current;
+    if (!finalScript?.length) return;
+    const controller = newController();
+    addLog('>>> REWRITER: Starting script adaptation...');
+    dispatch({ type: 'MERGE', partial: { isProcessing: true } });
+    try {
+      const rewritten = await runScriptRewriterAgent(
+        finalScript,
+        (done, total) => { addLog(`>>> REWRITER: ${done}/${total} blocks done`); },
+        controller.signal
+      );
+      dispatch({ type: 'SET_FIELD', field: 'finalScript', value: rewritten });
+      dispatch({ type: 'MERGE', partial: { isProcessing: false } });
+      addLog('>>> REWRITER: Script adaptation complete.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      dispatch({ type: 'MERGE', partial: { isProcessing: false, lastError: `Rewriter failed: ${msg}` } });
+      addLog(`>>> REWRITER ERROR: ${msg}`);
+    }
+  }, [dispatch, addLog, newController]);
+
+  // ── AUDIT FIX ────────────────────────────────────────────────────────────────
+  const executeAuditFix = useCallback(async () => {
+    const { finalScript, projectType } = stateRef.current;
+    if (!finalScript?.length) return;
+
+    const isDoc = isDocPipeline(projectType);
+    const maxSales = isDoc ? 2 : 1;
+
+    // ── Pass 1: Instant structural fixes (no AI) ──────────────────────────────
+    const fixed = [...finalScript];
+    const structLog: string[] = [];
+
+    if (fixed[0]?.blockType !== 'HOOK') {
+      fixed[0] = { ...fixed[0], blockType: 'HOOK' };
+      structLog.push('block[0] → HOOK');
+    }
+    if (fixed[fixed.length - 1]?.blockType !== 'OUTRO') {
+      fixed[fixed.length - 1] = { ...fixed[fixed.length - 1], blockType: 'OUTRO' };
+      structLog.push('block[last] → OUTRO');
+    }
+
+    const salesIdxs = fixed.map((b, i) => b.blockType === 'SALES' ? i : -1).filter(i => i >= 0);
+    if (salesIdxs.length === 0) {
+      const p1 = Math.floor(fixed.length * 0.33);
+      fixed[p1] = { ...fixed[p1], blockType: 'SALES' };
+      structLog.push(`SALES inserted at block[${p1}]`);
+      if (isDoc) {
+        const p2 = Math.floor(fixed.length * 0.66);
+        fixed[p2] = { ...fixed[p2], blockType: 'SALES' };
+        structLog.push(`SALES inserted at block[${p2}]`);
+      }
+    } else if (salesIdxs.length > maxSales) {
+      salesIdxs.slice(maxSales).forEach(i => { fixed[i] = { ...fixed[i], blockType: 'TRANSITION' }; });
+      structLog.push(`${salesIdxs.length - maxSales} excess SALES → TRANSITION`);
+    }
+
+    let run = 1;
+    for (let i = 1; i < fixed.length; i++) {
+      if (fixed[i].blockType === fixed[i - 1].blockType) {
+        run++;
+        if (run === 5 && fixed[i].blockType === 'BODY') {
+          fixed[i] = { ...fixed[i], blockType: 'TRANSITION' };
+          structLog.push(`run break at block[${i}] → TRANSITION`);
+          run = 1;
+        }
+      } else { run = 1; }
+    }
+
+    addLog(`>>> AUDIT FIX (structural): ${structLog.length ? structLog.join('; ') : 'nothing to fix'}`);
+    dispatch({ type: 'SET_FIELD', field: 'finalScript', value: fixed });
+
+    // ── Pass 2: AI content fixes (targeted) ───────────────────────────────────
+    const BLACKLIST = ['assassination', 'killing', 'murdered', 'suicide', 'genocide', 'massacre', 'terrorist', 'bomb', 'explosive', 'torture', 'rape', 'shooter', 'sniper', 'liquidation', 'eliminate', 'execution', 'decapitation', 'shooting', 'fatality', 'fatalities', 'slaughter'];
+    const blockIssues: Record<number, string[]> = {};
+    fixed.forEach((b, i) => {
+      const issues: string[] = [];
+      const text = ((b.audioScript ?? '') + ' ' + (b.russianScript ?? '')).toLowerCase();
+      const found = BLACKLIST.filter(w => text.includes(w));
+      if (found.length) issues.push(`blacklisted words: ${found.join(', ')}`);
+      if ((b.audioScript ?? '').split(/\s+/).filter(Boolean).length < 30) issues.push('audioScript too short (< 30 words)');
+      if (issues.length) blockIssues[i] = issues;
+    });
+
+    const targetIndices = Object.keys(blockIssues).map(Number);
+    if (!targetIndices.length) {
+      addLog('>>> AUDIT FIX: No content issues — structural fixes applied only.');
+      return;
+    }
+
+    addLog(`>>> AUDIT FIX (AI): ${targetIndices.length} blocks need content fixes...`);
+    const controller = newController();
+    dispatch({ type: 'MERGE', partial: { isProcessing: true } });
+    try {
+      const aiFixed = await runAuditFixAgent(
+        fixed, targetIndices, blockIssues,
+        (done, total) => addLog(`>>> AUDIT FIX: ${done}/${total} blocks done`),
+        controller.signal
+      );
+      dispatch({ type: 'SET_FIELD', field: 'finalScript', value: aiFixed });
+      dispatch({ type: 'MERGE', partial: { isProcessing: false } });
+      addLog('>>> AUDIT FIX: Complete.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      dispatch({ type: 'MERGE', partial: { isProcessing: false, lastError: `Audit fix failed: ${msg}` } });
+      addLog(`>>> AUDIT FIX ERROR: ${msg}`);
+    }
+  }, [dispatch, addLog, newController]);
+
   return {
     executeScout,
     executeRadar,
     executeAnalyst,
     executeArchitect,
+    executeDocCircle,
+    executeActPlanning,
+    executeOutline,
     executeWriter,
     executeDocumentaryWriter,
     handleImageGen,
@@ -417,8 +668,13 @@ export function useAgentPipeline({
     handleApproveRadar,
     handleApproveAnalyst,
     handleApproveArchitect,
+    handleApproveDocCircle,
+    handleApproveActPlanning,
+    handleApproveOutline,
     handleSelectTopic,
     cancelCurrentOperation,
     executeSEO,
+    executeRewrite,
+    executeAuditFix,
   };
 }

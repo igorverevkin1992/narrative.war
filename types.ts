@@ -4,6 +4,9 @@ export enum AgentType {
   RADAR = 'RADAR',
   ANALYST = 'ANALYST',
   ARCHITECT = 'ARCHITECT',
+  OUTLINER = 'OUTLINER',
+  DOC_CIRCLE = 'DOC_CIRCLE',
+  ACT_PLANNING = 'ACT_PLANNING',
   WRITER = 'WRITER',
   COMPLETED = 'COMPLETED'
 }
@@ -18,6 +21,10 @@ export interface TopicSuggestion {
   hook: string;
   narrativeAngle: string;
   viralFactor: string;
+  protagonist: string;  // "Real Name — Role (journalist/researcher/victim/whistleblower). Source."
+  antagonist: string;   // "Named institution or individual — documented action."
+  searchQuery?: string; // Exact Google query used to find this topic (used to build sourceUrl)
+  sourceUrl?: string;   // Google Search URL constructed from searchQuery.
 }
 
 export interface SmokingGun {
@@ -45,7 +52,7 @@ export interface ScriptBlock {
   assetName?: string;
 }
 
-export type ProjectType = 'youtube' | 'documentary';
+export type ProjectType = 'youtube' | 'documentary' | 'short_doc';
 
 export interface SeoPackage {
   titles: string[];
@@ -83,9 +90,13 @@ export interface SystemState {
 
   // Agent Outputs
   scoutSuggestions?: TopicSuggestion[]; // Output from Scout
+  scoutHook?: string; // Raw Scout hook text — passed through to Analyst as primary event anchor
   radarOutput?: string; // Potential viral topics
   researchDossier?: string; // Always stored as formatted string
   structureMap?: string; // Structure plan (6-act for YouTube, 10-12-act for documentary)
+  scriptOutline?: string; // Outliner output (numbered scene list with setup/payoff arcs)
+  docCircle?: string;    // Documentary: Steps 1-3 (conflict architecture + global Harmon circle + 4-act division)
+  actPlanning?: string;  // Documentary: Steps 4-5 (per-act circles + 32-beat outline)
   thumbnailConcept?: string; // Extracted from Architect output
   documentaryActs?: Array<{ block: string; timecode: string; description: string }>; // Documentary only
   currentWritingAct?: number; // 0-indexed act being written (documentary multi-pass progress)
@@ -113,7 +124,7 @@ export const INITIAL_STATE: SystemState = {
   isProcessing: false,
   isSteppable: true,
   stepStatus: 'IDLE',
-  projectType: 'youtube',
+  projectType: 'short_doc',
   logs: ['> NARRATIVE.WAR INITIALIZED...', '> WAITING FOR TARGET VECTOR...'],
   history: [],
   showHistory: false
