@@ -792,7 +792,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
             if (shortBlocks.length) auditIssues.push({ type: 'warn', msg: `${shortBlocks.length} block(s) with < 30 words` });
             if (script[0]?.blockType !== 'HOOK') auditIssues.push({ type: 'warn', msg: 'First block is not HOOK' });
             if (script[script.length - 1]?.blockType !== 'OUTRO') auditIssues.push({ type: 'warn', msg: 'Last block is not OUTRO' });
-            const maxSales = projectType === 'documentary' ? 4 : projectType === 'short_doc' ? 2 : 1;
+            const maxSales = projectType === 'documentary' ? 4 : 1;
             const salesCount = script.filter(b => b.blockType === 'SALES').length;
             if (salesCount === 0) auditIssues.push({ type: 'warn', msg: 'No SALES blocks' });
             if (salesCount > maxSales) auditIssues.push({ type: 'warn', msg: `${salesCount} SALES blocks (max ${maxSales})` });

@@ -884,7 +884,7 @@ occupation → "administrative control", "territorial presence", "the situation 
 
 BLOCK TYPE RULES — MANDATORY:
 Never use blockType "ACT_HEADER". Use ONLY: HOOK / INTRO / BODY / TRANSITION / SALES / OUTRO.
-TOTAL SALES BLOCKS: exactly 2 across the entire film (1 per act). No more, no less.
+TOTAL SALES BLOCKS: exactly 1 across the entire film — in Act 1 only. Act 2 must NOT contain any SALES block.
 
 Act 1 ONLY:
 - Block 1: blockType MUST be "HOOK". The most urgent, provocative opening question or revelation. audioScript ≥ 400 characters.
@@ -894,7 +894,7 @@ Act 1 ONLY:
 
 Act 2 ONLY:
 - Block 1: blockType "TRANSITION". Bridge from Act 1's revelation into the deeper investigation.
-- Around block 8-10 (midpoint): Exactly 1 block with blockType "SALES". This is the SECOND and LAST SALES block in the film.
+- NO SALES block in Act 2. Zero. The only SALES block is in Act 1.
 - Last block (the very last block of the entire film): blockType "OUTRO". Deliver the moral verdict or haunting unresolved question. audioScript ≥ 400 characters.
 
 All acts:
