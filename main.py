@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uvicorn
 import httpx
@@ -6,6 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from scripts.style_search import get_style_examples
+
+PROXY_RETRY_COUNT = 3
+PROXY_RETRY_BASE_MS = 1500  # ms, doubles each attempt
 
 app = FastAPI(title="NARRATIVE.WAR Backend", version="3.3")
 
@@ -82,45 +86,76 @@ async def gemini_proxy(path: str, request: Request):
     if is_stream:
         async def stream_generator():
             # Client must live inside the generator — it outlives the route handler
+            for attempt in range(PROXY_RETRY_COUNT):
+                try:
+                    async with httpx.AsyncClient(timeout=300.0) as stream_client:
+                        async with stream_client.stream(
+                            "POST",
+                            target_url,
+                            content=body,
+                            params=params,
+                            headers={"Content-Type": "application/json"},
+                        ) as resp:
+                            first_chunk = True
+                            async for chunk in resp.aiter_bytes():
+                                first_chunk = False
+                                yield chunk
+                            if first_chunk and attempt < PROXY_RETRY_COUNT - 1:
+                                # Got a response but no data — treat as disconnect, retry
+                                delay = PROXY_RETRY_BASE_MS * (2 ** attempt) / 1000
+                                print(f"⚠️  Gemini stream: empty response, retrying in {delay:.1f}s (attempt {attempt + 1}/{PROXY_RETRY_COUNT})")
+                                await asyncio.sleep(delay)
+                                continue
+                    return  # success
+                except httpx.RemoteProtocolError as e:
+                    if attempt < PROXY_RETRY_COUNT - 1:
+                        delay = PROXY_RETRY_BASE_MS * (2 ** attempt) / 1000
+                        print(f"❌ Gemini stream disconnected: {e} — retrying in {delay:.1f}s (attempt {attempt + 1}/{PROXY_RETRY_COUNT})")
+                        await asyncio.sleep(delay)
+                    else:
+                        print(f"❌ Gemini stream disconnected: {e} — all retries exhausted")
+                        yield b'{"error": "Gemini disconnected before sending response"}'
+                except Exception as e:
+                    print(f"❌ Gemini stream error: {type(e).__name__}: {e}")
+                    yield b'{"error": "Proxy streaming error"}'
+                    return
+
+        return StreamingResponse(stream_generator(), media_type="application/json")
+    else:
+        last_exc: Exception = RuntimeError("No attempts made")
+        for attempt in range(PROXY_RETRY_COUNT):
             try:
-                async with httpx.AsyncClient(timeout=300.0) as stream_client:
-                    async with stream_client.stream(
-                        "POST",
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    resp = await client.post(
                         target_url,
                         content=body,
                         params=params,
                         headers={"Content-Type": "application/json"},
-                    ) as resp:
-                        async for chunk in resp.aiter_bytes():
-                            yield chunk
+                    )
+                    print(f"🔍 Gemini {resp.status_code} for {path.split('/')[-1]} | body[:300]: {resp.text[:300]}")
+                    if resp.status_code == 503 and attempt < PROXY_RETRY_COUNT - 1:
+                        delay = PROXY_RETRY_BASE_MS * (2 ** attempt) / 1000
+                        print(f"⚠️  Gemini 503, retrying in {delay:.1f}s (attempt {attempt + 1}/{PROXY_RETRY_COUNT})")
+                        await asyncio.sleep(delay)
+                        continue
+                    try:
+                        return resp.json()
+                    except Exception:
+                        raise HTTPException(status_code=502, detail=f"Gemini returned non-JSON (status {resp.status_code})")
+            except HTTPException:
+                raise
             except httpx.RemoteProtocolError as e:
-                print(f"❌ Gemini stream disconnected: {e}")
-                yield b'{"error": "Gemini disconnected before sending response"}'
+                last_exc = e
+                if attempt < PROXY_RETRY_COUNT - 1:
+                    delay = PROXY_RETRY_BASE_MS * (2 ** attempt) / 1000
+                    print(f"❌ Gemini disconnected (non-stream): {e} — retrying in {delay:.1f}s (attempt {attempt + 1}/{PROXY_RETRY_COUNT})")
+                    await asyncio.sleep(delay)
+                else:
+                    print(f"❌ Gemini disconnected (non-stream): {e} — all retries exhausted")
             except Exception as e:
-                print(f"❌ Gemini stream error: {type(e).__name__}: {e}")
-                yield b'{"error": "Proxy streaming error"}'
-
-        return StreamingResponse(stream_generator(), media_type="application/json")
-    else:
-        try:
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                resp = await client.post(
-                    target_url,
-                    content=body,
-                    params=params,
-                    headers={"Content-Type": "application/json"},
-                )
-                print(f"🔍 Gemini {resp.status_code} for {path.split('/')[-1]} | body[:300]: {resp.text[:300]}")
-                try:
-                    return resp.json()
-                except Exception:
-                    raise HTTPException(status_code=502, detail=f"Gemini returned non-JSON (status {resp.status_code})")
-        except httpx.RemoteProtocolError as e:
-            print(f"❌ Gemini disconnected (non-stream): {e}")
-            raise HTTPException(status_code=503, detail="Gemini disconnected before sending response. Retry.")
-        except Exception as e:
-            print(f"❌ Gemini proxy error: {type(e).__name__}: {e}")
-            raise HTTPException(status_code=502, detail=f"Proxy error: {type(e).__name__}")
+                print(f"❌ Gemini proxy error: {type(e).__name__}: {e}")
+                raise HTTPException(status_code=502, detail=f"Proxy error: {type(e).__name__}")
+        raise HTTPException(status_code=503, detail="Gemini disconnected before sending response. All retries exhausted.")
 
 
 if __name__ == "__main__":

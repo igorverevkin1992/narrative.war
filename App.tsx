@@ -1,8 +1,8 @@
 
-import React, { useState, useCallback, useEffect, useReducer } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useReducer } from 'react';
 import mammoth from 'mammoth';
 import { AgentType, INITIAL_STATE } from './types';
-import { APP_VERSION, PROJECT_CONFIGS } from './constants';
+import { APP_VERSION, PROJECT_CONFIGS, TOPIC_TEMPLATES } from './constants';
 import { stateReducer } from './store/reducer';
 import { useAgentPipeline, isDocPipeline } from './hooks/useAgentPipeline';
 import { useHistory } from './hooks/useHistory';
@@ -14,6 +14,7 @@ import StepEditor from './components/StepEditor';
 import ErrorToast from './components/ErrorToast';
 import ThumbnailPreview from './components/ThumbnailPreview';
 import SeoDisplay from './components/SeoDisplay';
+import SettingsPanel from './components/SettingsPanel';
 
 // --- ICONS ---
 const ScoutIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>;
@@ -71,6 +72,11 @@ function App() {
   const [editedActPlanning, setEditedActPlanning] = useState('');
   const [currentTab, setCurrentTab] = useState<AppTab>('intel');
   const [selectedSuggestion, setSelectedSuggestion] = useState<import('./types').TopicSuggestion | null>(null);
+  const [showDraftRestore, setShowDraftRestore] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templateCategory, setTemplateCategory] = useState<string>('all');
+  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const addLog = useCallback((msg: string) => {
     dispatch({ type: 'ADD_LOG', message: msg });
@@ -93,7 +99,40 @@ function App() {
 
   useEffect(() => {
     loadHistoryFromServer();
+    // Check for saved draft on startup
+    try {
+      const saved = localStorage.getItem('narrative_war_draft');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.finalScript?.length || parsed?.researchDossier || parsed?.structureMap) {
+          setShowDraftRestore(true);
+        }
+      }
+    } catch { /* ignore */ }
   }, [loadHistoryFromServer]);
+
+  // Debounced auto-save draft to localStorage
+  useEffect(() => {
+    if (!state.finalScript?.length && !state.researchDossier && !state.structureMap) return;
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = setTimeout(() => {
+      try {
+        const draft = {
+          topic: state.topic,
+          projectType: state.projectType,
+          finalScript: state.finalScript,
+          researchDossier: state.researchDossier,
+          structureMap: state.structureMap,
+          scriptOutline: state.scriptOutline,
+          radarOutput: state.radarOutput,
+          thumbnailConcept: state.thumbnailConcept,
+          seoPackage: state.seoPackage,
+          savedAt: new Date().toISOString(),
+        };
+        localStorage.setItem('narrative_war_draft', JSON.stringify(draft));
+      } catch { /* storage full or unavailable */ }
+    }, 1500);
+  }, [state.finalScript, state.researchDossier, state.structureMap, state.topic, state.projectType, state.scriptOutline, state.radarOutput, state.thumbnailConcept, state.seoPackage]);
 
   // Auto-navigate to the relevant tab when agent data arrives
   useEffect(() => {
@@ -110,12 +149,46 @@ function App() {
     if (state.finalScript) pipeline.handleImageGen(index, state.finalScript);
   }, [pipeline, state.finalScript]);
 
+  const handleRestoreDraft = useCallback(() => {
+    try {
+      const saved = localStorage.getItem('narrative_war_draft');
+      if (!saved) return;
+      const draft = JSON.parse(saved);
+      dispatch({ type: 'MERGE', partial: {
+        topic: draft.topic ?? '',
+        projectType: draft.projectType ?? 'short_doc',
+        finalScript: draft.finalScript ?? undefined,
+        researchDossier: draft.researchDossier ?? undefined,
+        structureMap: draft.structureMap ?? undefined,
+        scriptOutline: draft.scriptOutline ?? undefined,
+        radarOutput: draft.radarOutput ?? undefined,
+        thumbnailConcept: draft.thumbnailConcept ?? undefined,
+        seoPackage: draft.seoPackage ?? undefined,
+      }});
+    } catch { /* ignore */ }
+    setShowDraftRestore(false);
+  }, [dispatch]);
+
+  const handleDiscardDraft = useCallback(() => {
+    localStorage.removeItem('narrative_war_draft');
+    setShowDraftRestore(false);
+  }, []);
+
   const steps = state.projectType === 'short_doc' ? SHORT_DOC_STEPS : isDocPipeline(state.projectType) ? DOCUMENTARY_STEPS : YOUTUBE_STEPS;
   const agentOrder = isDocPipeline(state.projectType) ? DOCUMENTARY_AGENT_ORDER : YOUTUBE_AGENT_ORDER;
   const currentIdx = state.currentAgent === 'IDLE' ? -1 : agentOrder.indexOf(state.currentAgent as AgentType);
 
   return (
     <div className="min-h-screen bg-mw-black text-slate-300 font-sans selection:bg-mw-red selection:text-white">
+
+      {showDraftRestore && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-mw-gray border border-mw-red/60 rounded px-4 py-3 shadow-lg text-sm font-mono">
+          <span className="text-mw-red font-bold">DRAFT FOUND</span>
+          <span className="text-slate-300">Restore previous session?</span>
+          <button onClick={handleRestoreDraft} className="px-3 py-1 bg-mw-red hover:bg-red-700 text-white rounded text-xs font-bold transition-colors">RESTORE</button>
+          <button onClick={handleDiscardDraft} className="px-3 py-1 bg-mw-gray/60 hover:bg-mw-gray border border-mw-slate/40 text-slate-400 rounded text-xs transition-colors">DISCARD</button>
+        </div>
+      )}
 
       {state.lastError && (
         <ErrorToast
@@ -144,9 +217,17 @@ function App() {
             <div className="font-mono text-xs text-mw-slate hidden sm:block border-l border-mw-slate/30 pl-4">
               STATUS: {state.isProcessing ? 'BUSY' : state.stepStatus === 'WAITING_FOR_APPROVAL' ? 'WAITING' : 'IDLE'}
             </div>
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Settings"
+              className="text-mw-slate hover:text-white transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
           </div>
         </div>
       </header>
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
 
       {/* Tab Navigation Bar */}
       <div className="sticky top-16 z-40 bg-mw-black/95 backdrop-blur border-b border-mw-slate/20">
@@ -209,13 +290,56 @@ function App() {
               </div>
             </div>
 
-            <label className="block text-xs font-bold text-mw-red uppercase mb-2 tracking-wider">Target Vector (Topic)</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-mw-red uppercase tracking-wider">Target Vector (Topic)</label>
+              <button
+                onClick={() => setShowTemplates(v => !v)}
+                className={`text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded border transition-all ${showTemplates ? 'border-cyan-500/60 text-cyan-300 bg-cyan-900/20' : 'border-mw-slate/30 text-mw-slate hover:border-cyan-400/50 hover:text-cyan-400'}`}
+              >
+                {showTemplates ? '▼ Templates' : '▶ Templates'}
+              </button>
+            </div>
+
+            {showTemplates && (
+              <div className="mb-3 bg-black/30 border border-mw-slate/20 rounded p-3 flex flex-col gap-2">
+                {/* Category filter */}
+                <div className="flex flex-wrap gap-1">
+                  {(['all', 'geopolitics', 'business', 'history', 'crime', 'technology', 'society'] as const).map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setTemplateCategory(cat)}
+                      className={`px-2 py-0.5 text-[10px] font-mono uppercase rounded border transition-all ${templateCategory === cat ? 'border-cyan-500/60 text-cyan-300 bg-cyan-900/20' : 'border-mw-slate/30 text-mw-slate hover:border-white/30'}`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+                {/* Template list */}
+                <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                  {TOPIC_TEMPLATES.filter(t => templateCategory === 'all' || t.category === templateCategory).map(t => (
+                    <button
+                      key={t.id}
+                      disabled={state.isProcessing}
+                      onClick={() => {
+                        dispatch({ type: 'SET_FIELD', field: 'topic', value: t.scaffold });
+                        setShowTemplates(false);
+                      }}
+                      className="text-left px-2 py-1.5 rounded border border-mw-slate/20 hover:border-cyan-500/40 hover:bg-cyan-900/10 transition-all group"
+                    >
+                      <div className="text-[10px] font-bold text-slate-200 group-hover:text-cyan-200">{t.name}</div>
+                      <div className="text-[10px] text-mw-slate/70 font-mono truncate">{t.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <input
                 type="text"
                 value={state.topic}
                 onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'topic', value: e.target.value })}
-                placeholder="Manual topic..."
+                placeholder="Manual topic or select a template above..."
                 className="w-full bg-black border border-mw-slate/50 rounded p-3 text-white focus:border-mw-red focus:ring-1 focus:ring-mw-red outline-none transition-all placeholder:text-mw-slate/50 font-mono"
                 disabled={state.isProcessing || state.stepStatus !== 'IDLE'}
               />
@@ -240,6 +364,23 @@ function App() {
                 }`}
               >
                 {state.isProcessing ? 'Executing...' : 'Run Sequence (Manual Topic)'}
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                onClick={async () => {
+                  dispatch({ type: 'SET_FIELD', field: 'isSteppable', value: false });
+                  const suggestions = await pipeline.executeScout();
+                  if (suggestions && suggestions.length > 0) {
+                    pipeline.handleSelectTopic(suggestions[0]);
+                  }
+                }}
+                disabled={state.isProcessing || (state.currentAgent !== 'IDLE' && state.currentAgent !== AgentType.COMPLETED)}
+                className={`w-full py-2.5 px-4 rounded font-bold uppercase tracking-widest transition-all text-sm border border-cyan-500/40 text-cyan-300 hover:bg-cyan-900/30 hover:border-cyan-400 flex items-center justify-center gap-2 ${state.isProcessing ? 'opacity-40 cursor-not-allowed' : ''}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Full Auto Run
               </button>
             </div>
 
@@ -468,6 +609,22 @@ function App() {
           </div>
 
           <AgentLog logs={state.logs} />
+
+          {/* Writer progress bar — visible only during streaming */}
+          {state.currentAgent === AgentType.WRITER && typeof state.writerChunks === 'number' && (
+            <div className="mt-2 px-1">
+              <div className="flex items-center justify-between text-[10px] font-mono text-mw-slate mb-1">
+                <span>WRITER: STREAMING</span>
+                <span>{state.writerChunks} chunks</span>
+              </div>
+              <div className="w-full h-1 bg-mw-gray/40 rounded overflow-hidden">
+                <div
+                  className="h-full bg-mw-red transition-all duration-300 rounded"
+                  style={{ width: `${Math.min(100, (state.writerChunks / 400) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Column: Tab Content */}
@@ -690,9 +847,12 @@ function App() {
                     radarContent={state.radarOutput}
                     analystContent={state.researchDossier}
                     architectContent={state.structureMap}
+                    thumbnailConcept={state.thumbnailConcept}
                     seo={state.seoPackage}
                     onGenerateImage={onImageGen}
                     dispatch={dispatch}
+                    undoStack={state.undoStack}
+                    redoStack={state.redoStack}
                   />
                   {state.seoPackage && <SeoDisplay seo={state.seoPackage} />}
                 </>

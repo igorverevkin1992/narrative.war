@@ -1,6 +1,44 @@
 import React, { useState } from 'react';
 import { SeoPackage } from '../types';
 
+const downloadSeoTxt = (seo: SeoPackage) => {
+  const content = [
+    '═══════════════════════════════════════',
+    'TITLE OPTIONS',
+    '═══════════════════════════════════════',
+    ...seo.titles.map((t, i) => `${i + 1}. ${t}`),
+    '',
+    '═══════════════════════════════════════',
+    'DESCRIPTION',
+    '═══════════════════════════════════════',
+    seo.description,
+    '',
+    '═══════════════════════════════════════',
+    'TAGS',
+    '═══════════════════════════════════════',
+    seo.tags,
+    '',
+    '═══════════════════════════════════════',
+    'PINNED COMMENT',
+    '═══════════════════════════════════════',
+    seo.firstComment,
+    '',
+    '═══════════════════════════════════════',
+    'END SCREEN SCRIPT',
+    '═══════════════════════════════════════',
+    seo.endScreenScript,
+  ].join('\n');
+  const blob = new Blob(['\ufeff', content], { type: 'text/plain;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'SEO_PACKAGE.txt';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 interface SeoDisplayProps {
   seo: SeoPackage;
 }
@@ -25,9 +63,17 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
 const SeoDisplay: React.FC<SeoDisplayProps> = ({ seo }) => {
   return (
     <div className="bg-mw-gray/20 rounded-lg border border-mw-slate/30 p-4 flex flex-col gap-4">
-      <h2 className="text-xl font-bold text-mw-red uppercase tracking-wider">
-        YouTube SEO Package
-      </h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-mw-red uppercase tracking-wider">
+          YouTube SEO Package
+        </h2>
+        <button
+          onClick={() => downloadSeoTxt(seo)}
+          className="px-3 py-1.5 text-[10px] font-mono uppercase rounded border border-mw-slate/30 text-mw-slate hover:border-mw-red hover:text-mw-red transition-all"
+        >
+          ⬇ Download SEO Package (.txt)
+        </button>
+      </div>
 
       {/* Titles */}
       <div>

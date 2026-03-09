@@ -34,6 +34,66 @@ export const AVAILABLE_MODELS = [
   { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro (High Quality)' }
 ];
 
+// --- TOPIC TEMPLATES ---
+// Pre-defined narrative frameworks. User selects one → topic field is pre-filled with a scaffold.
+export interface TopicTemplate {
+  id: string;
+  name: string;
+  category: 'geopolitics' | 'business' | 'history' | 'crime' | 'technology' | 'society';
+  scaffold: string; // Fill-in-the-blank topic string shown in the topic input
+  description: string;
+}
+
+export const TOPIC_TEMPLATES: TopicTemplate[] = [
+  // Geopolitics
+  { id: 'rise-fall',     category: 'geopolitics', name: 'Rise & Fall',          scaffold: 'The Rise and Fall of [FIGURE/REGIME]: How [COUNTRY] Lost Everything',      description: 'Power gained, maintained, then catastrophically lost' },
+  { id: 'secret-deal',   category: 'geopolitics', name: 'Secret Deal',           scaffold: 'The Secret [COUNTRY–COUNTRY] Deal That Reshaped [REGION]',                description: 'Hidden diplomacy with world-altering consequences' },
+  { id: 'proxy-war',     category: 'geopolitics', name: 'Proxy War',             scaffold: 'Inside [CONFLICT]: The Real War Behind the War in [REGION]',              description: 'Surface conflict masking deeper power struggle' },
+  { id: 'sanctions',     category: 'geopolitics', name: 'Economic Siege',        scaffold: 'How [COUNTRY] Survived / Was Destroyed by [SANCTIONS/BLOCKADE]',          description: 'Economic warfare as geopolitical weapon' },
+  // Business & Finance
+  { id: 'billion-fraud', category: 'business',    name: 'Billion-Dollar Fraud',  scaffold: 'The [COMPANY/PERSON] Fraud: How $[AMOUNT]B Vanished and Nobody Noticed',  description: 'Corporate collapse built on deliberate deception' },
+  { id: 'monopoly',      category: 'business',    name: 'Monopoly Machine',      scaffold: 'How [COMPANY] Quietly Took Over [INDUSTRY] Without Anyone Stopping It',   description: 'Market domination through strategy and exploitation' },
+  { id: 'bubble',        category: 'business',    name: 'Asset Bubble',          scaffold: 'The [ASSET] Bubble: The Mania, The Crash, and Who Knew First',            description: 'Collective delusion and its inevitable collapse' },
+  // History
+  { id: 'cover-up',      category: 'history',     name: 'Government Cover-Up',   scaffold: 'The [COUNTRY] Cover-Up: What [GOVERNMENT] Hid About [EVENT] for [N] Years', description: 'State-sanctioned suppression of a damning truth' },
+  { id: 'forgotten',     category: 'history',     name: 'Forgotten Operation',   scaffold: 'Operation [CODENAME]: The [COUNTRY] Secret That History Almost Forgot',   description: 'Declassified or rediscovered covert operation' },
+  // Crime & Justice
+  { id: 'cartel',        category: 'crime',       name: 'Criminal Empire',       scaffold: 'Inside [CARTEL/GANG]: The Criminal Empire That Owns [REGION/CITY]',       description: 'Organised crime that became a parallel state' },
+  { id: 'whistleblower', category: 'crime',       name: 'Whistleblower',         scaffold: '[PERSON] Exposed [ORGANISATION]. Then [ORGANISATION] Came After Them.',   description: 'Truth-teller facing institutional retaliation' },
+  // Technology
+  { id: 'tech-race',     category: 'technology',  name: 'Tech Race',             scaffold: 'The [COUNTRY] vs [COUNTRY] Race to Control [TECHNOLOGY]',                 description: 'Strategic competition over transformative tech' },
+  { id: 'surveillance',  category: 'technology',  name: 'Surveillance State',    scaffold: 'How [COUNTRY/COMPANY] Built the Most Powerful Surveillance System Ever',  description: 'Technology weaponised against citizens' },
+  // Society
+  { id: 'cult',          category: 'society',     name: 'Cult / Sect',           scaffold: 'Inside [ORGANISATION]: How [LEADER] Built a [CULT/SECT] and Why People Followed', description: 'Charismatic manipulation and mass psychology' },
+  { id: 'propaganda',    category: 'society',     name: 'Propaganda Machine',    scaffold: 'The [COUNTRY] Propaganda Machine: How [REGIME] Controls What [NATION] Believes', description: 'Information warfare targeting one\'s own population' },
+];
+
+// --- DEMONETIZATION BLACKLIST ---
+// Full vocabulary from YOUTUBE ADVERTISER BLACKLIST in Writer prompts (7 categories).
+// Single source of truth — used by Audit Panel and AUDIT_FIX agent.
+export const DEMONETIZATION_BLACKLIST: string[] = [
+  // CAT-1: Violence & Conflict
+  'assassination', 'assassinate', 'liquidation', 'killing', 'murder', 'murdered',
+  'slaughter', 'massacre', 'genocide', 'torture', 'execution', 'beheading', 'eliminate',
+  'violence', 'brutality', 'atrocity', 'carnage', 'slaying', 'stabbing', 'warlord',
+  'hostage', 'war crime', 'ethnic cleansing',
+  // CAT-2: Weapons & Firearms
+  'explosive', 'explosives', 'grenade', 'sniper', 'landmine', 'nuke',
+  'shooter', 'decapitation', 'fatality', 'fatalities',
+  // CAT-3: Drugs
+  'cocaine', 'heroin', 'fentanyl', 'opioid', 'overdose', 'narcotics', 'junkie',
+  'drug cartel', 'drug trafficking', 'drug dealer',
+  // CAT-4: Mental Health (highest risk)
+  'suicide', 'suicidal', 'self-harm', 'anorexia', 'bulimia', 'mental breakdown',
+  // CAT-5: Extremism
+  'terrorist', 'terrorism', 'jihad', 'extremist', 'radicalization', 'hate crime',
+  'white supremacist',
+  // CAT-6: Sexual content
+  'rape', 'sexual assault', 'molestation', 'pedophile', 'grooming',
+  // CAT-7: General controversy
+  'dead bodies', 'death toll',
+];
+
 export const AGENT_SCOUT_PROMPT = `
 You are AGENT SCOUT (MEDIA FORENSICS RECON).
 Your mission: Scan the current global media horizon (LAST 7 DAYS) to identify high-potential video topics for the "NARRATIVE.WAR" channel. Focus on topics that already have PROVEN viral momentum — trending for multiple days is better than trending only today.
@@ -1318,7 +1378,17 @@ Summary: [2-3 sentences]
 Emotional Arc: [Opening emotion] → [Peak emotion] → [Closing emotion]
 Dramatic Hook: [The final image or statement that haunts the viewer after the film ends]
 
-Output plain text. Label all sections clearly. No JSON.
+Output plain text. Label all sections clearly.
+
+After all plain text, append this required machine-readable block (do NOT skip it):
+
+ACTS_JSON:
+[
+  {"block": "ACT 1: [Title from Part 3]", "timecode": "00:00–20:00", "description": "[Summary from Part 3]"},
+  {"block": "ACT 2: [Title from Part 3]", "timecode": "20:00–40:00", "description": "[Summary from Part 3]"},
+  {"block": "ACT 3: [Title from Part 3]", "timecode": "40:00–57:00", "description": "[Summary from Part 3]"},
+  {"block": "ACT 4: [Title from Part 3]", "timecode": "57:00–68:00", "description": "[Summary from Part 3]"}
+]
 
 ARCHITECT INVESTIGATIVE MAP:
 __STRUCTURE__
@@ -1456,7 +1526,15 @@ Summary: [2-3 sentences — the smoking gun is found, consequences, the truth th
 Emotional Arc: [Opening emotion] → [Peak emotion] → [Closing emotion]
 Dramatic Hook: [The final image or statement that haunts the viewer after the film ends]
 
-Output plain text. Label all sections clearly. No JSON.
+Output plain text. Label all sections clearly.
+
+After all plain text, append this required machine-readable block (do NOT skip it):
+
+ACTS_JSON:
+[
+  {"block": "ACT 1: [Title from Part 3]", "timecode": "00:00–09:00", "description": "[Summary from Part 3]"},
+  {"block": "ACT 2: [Title from Part 3]", "timecode": "09:00–18:00", "description": "[Summary from Part 3]"}
+]
 
 ARCHITECT INVESTIGATIVE MAP:
 __STRUCTURE__

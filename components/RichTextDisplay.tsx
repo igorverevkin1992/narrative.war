@@ -60,9 +60,11 @@ const RichTextDisplay: React.FC<RichTextDisplayProps> = memo(({ content, classNa
         }
 
         // Handle Key-Value (e.g., "Topic: Value")
-        if (trimmed.includes(':') && !trimmed.includes('://') && trimmed.length < 100 && !trimmed.endsWith(':')) {
-             const parts = trimmed.split(':');
-             const label = parts[0];
+        const _kvParts = trimmed.split(':');
+        const _kvLabel = _kvParts[0];
+        if (trimmed.includes(':') && !trimmed.includes('://') && trimmed.length < 100 && !trimmed.endsWith(':') && !/\d/.test(_kvLabel) && !/[\[\]]/.test(_kvLabel)) {
+             const parts = _kvParts;
+             const label = _kvLabel;
              const val = parts.slice(1).join(':');
              return (
                  <div key={idx} className="text-gray-400">

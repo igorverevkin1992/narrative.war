@@ -18,7 +18,8 @@ import {
 } from '../services/geminiService';
 import { AgentType, SystemState, TopicSuggestion, ResearchDossier, ScriptBlock, HistoryItem } from '../types';
 import { Action } from '../store/reducer';
-import { AGENT_MODELS, PROJECT_CONFIGS } from '../constants';
+import { AGENT_MODELS, PROJECT_CONFIGS, DEMONETIZATION_BLACKLIST } from '../constants';
+import { getSettings } from '../appSettings';
 
 // Helper: true for any project type that uses the documentary pipeline (DocCircle → ActPlanning → Outline → multi-pass Writer)
 export const isDocPipeline = (pt: string): boolean => pt === 'documentary' || pt === 'short_doc';
@@ -123,7 +124,8 @@ export function useAgentPipeline({
     const script = await runStep(
       AgentType.WRITER,
       () => runWriterAgent(inputStructure, inputDossier, controller.signal, (chunks) => {
-        if (chunks % 20 === 0) addLog(`>>> WRITER: Streaming... (${chunks} chunks received)`);
+        dispatch({ type: 'MERGE', partial: { writerChunks: chunks } });
+        if (chunks % 40 === 0) addLog(`>>> WRITER: Streaming... (${chunks} chunks received)`);
       }, inputOutline),
       dispatch, addLog, controller,
       () => {}
@@ -152,9 +154,24 @@ export function useAgentPipeline({
         isProcessing: false,
         stepStatus: 'IDLE',
         history: updatedHistory,
+        writerChunks: undefined,
       }
     });
     addLog('>>> SYSTEM STANDBY.');
+
+    // Auto-SEO: silently generate after script is ready (if enabled in settings)
+    if (getSettings().autoSeoEnabled) {
+      addLog('>>> AUTO SEO: Generating YouTube SEO package...');
+      try {
+        const pkg = await runSEOAgent(topic, radarOutput, script);
+        if (pkg) {
+          dispatch({ type: 'MERGE', partial: { seoPackage: pkg } });
+          addLog('>>> AUTO SEO: Done.');
+        }
+      } catch (e) {
+        addLog(`>>> AUTO SEO: Failed — ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
   }, [newController, dispatch, addLog, saveToHistory]);
 
   // ── DOCUMENTARY MULTI-PASS WRITER ────────────────────────────────────────────
@@ -168,26 +185,57 @@ export function useAgentPipeline({
 
     let allBlocks: ScriptBlock[] = [];
     const { scriptOutline, projectType } = stateRef.current;
+    const useParallel = getSettings().parallelActWriting;
 
-    for (let i = 0; i < acts.length; i++) {
-      if (controller.signal.aborted) return;
-      dispatch({ type: 'MERGE', partial: { currentWritingAct: i } });
-      addLog(`>>> ACT ${i + 1}/${acts.length}: ${acts[i].block}...`);
-
-      const actBlocks = await runDocumentaryActWriter(
-        acts[i], acts, inputDossier, allBlocks.slice(-3), controller.signal, scriptOutline, projectType
+    if (useParallel) {
+      addLog(`>>> MODE: PARALLEL — all ${acts.length} acts writing simultaneously (no motif tracking).`);
+      dispatch({ type: 'MERGE', partial: { currentWritingAct: 0 } });
+      const results = await Promise.all(
+        acts.map((act, i) => {
+          addLog(`>>> ACT ${i + 1}/${acts.length}: ${act.block} [parallel]...`);
+          return runDocumentaryActWriter(act, acts, inputDossier, [], controller.signal, scriptOutline, projectType);
+        })
       );
-
-      if (!actBlocks) {
-        const error = `Act ${i + 1} ("${acts[i].block}") generation failed.`;
-        addLog(`>>> ERROR: ${error}`);
-        dispatch({ type: 'MERGE', partial: { isProcessing: false, stepStatus: 'IDLE', lastError: error } });
-        return;
+      for (let i = 0; i < results.length; i++) {
+        if (!results[i]) {
+          const error = `Act ${i + 1} ("${acts[i].block}") generation failed.`;
+          addLog(`>>> ERROR: ${error}`);
+          dispatch({ type: 'MERGE', partial: { isProcessing: false, stepStatus: 'IDLE', lastError: error } });
+          return;
+        }
+        allBlocks = [...allBlocks, ...results[i]!];
+        addLog(`>>> ACT ${i + 1} DONE: ${results[i]!.length} blocks.`);
       }
-
-      allBlocks = [...allBlocks, ...actBlocks];
-      addLog(`>>> ACT ${i + 1} DONE: ${actBlocks.length} blocks.`);
       dispatch({ type: 'MERGE', partial: { finalScript: calculateDurationAndRetiming(allBlocks) } });
+    } else {
+      let motifLog = '';
+      for (let i = 0; i < acts.length; i++) {
+        if (controller.signal.aborted) return;
+        dispatch({ type: 'MERGE', partial: { currentWritingAct: i } });
+        addLog(`>>> ACT ${i + 1}/${acts.length}: ${acts[i].block}...`);
+
+        const actBlocks = await runDocumentaryActWriter(
+          acts[i], acts, inputDossier, allBlocks.slice(-3), controller.signal, scriptOutline, projectType,
+          motifLog || undefined
+        );
+
+        if (!actBlocks) {
+          const error = `Act ${i + 1} ("${acts[i].block}") generation failed.`;
+          addLog(`>>> ERROR: ${error}`);
+          dispatch({ type: 'MERGE', partial: { isProcessing: false, stepStatus: 'IDLE', lastError: error } });
+          return;
+        }
+
+        allBlocks = [...allBlocks, ...actBlocks];
+        addLog(`>>> ACT ${i + 1} DONE: ${actBlocks.length} blocks.`);
+        dispatch({ type: 'MERGE', partial: { finalScript: calculateDurationAndRetiming(allBlocks) } });
+
+        const anchorBlocks = actBlocks.filter(b => ['HOOK', 'INTRO', 'TRANSITION'].includes(b.blockType)).slice(0, 3);
+        if (anchorBlocks.length) {
+          motifLog += `\nACT ${i + 1} — "${acts[i].block}":\n` +
+            anchorBlocks.map(b => `  [${b.blockType}] "${b.audioScript.substring(0, 150)}"`).join('\n');
+        }
+      }
     }
 
     const retimed = calculateDurationAndRetiming(allBlocks);
@@ -216,6 +264,20 @@ export function useAgentPipeline({
       }
     });
     addLog('>>> SYSTEM STANDBY.');
+
+    // Auto-SEO: silently generate after script is ready (if enabled in settings)
+    if (getSettings().autoSeoEnabled) {
+      addLog('>>> AUTO SEO: Generating YouTube SEO package...');
+      try {
+        const pkg = await runSEOAgent(topic, radarOutput, retimed);
+        if (pkg) {
+          dispatch({ type: 'MERGE', partial: { seoPackage: pkg } });
+          addLog('>>> AUTO SEO: Done.');
+        }
+      } catch (e) {
+        addLog(`>>> AUTO SEO: Failed — ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
   }, [newController, dispatch, addLog, saveToHistory]);
 
   // ── OUTLINER ─────────────────────────────────────────────────────────────────
@@ -514,8 +576,10 @@ export function useAgentPipeline({
     ].join('');
     const hookWithPeople = [
       suggestion.hook,
-      suggestion.protagonist ? `\nPROTAGONIST: ${suggestion.protagonist}` : '',
-      suggestion.antagonist  ? `\nANTAGONIST: ${suggestion.antagonist}` : '',
+      suggestion.protagonist    ? `\nPROTAGONIST: ${suggestion.protagonist}` : '',
+      suggestion.antagonist     ? `\nANTAGONIST: ${suggestion.antagonist}` : '',
+      suggestion.narrativeAngle ? `\nNARRATIVE ANGLE: ${suggestion.narrativeAngle}` : '',
+      suggestion.viralFactor    ? `\nVIRAL FACTOR: ${suggestion.viralFactor}` : '',
     ].join('');
     dispatch({ type: 'MERGE', partial: { topic: suggestion.title, scoutHook: hookWithPeople, currentAgent: 'IDLE' } });
     executeRadar(suggestion.title, richContext);
@@ -570,8 +634,7 @@ export function useAgentPipeline({
     const { finalScript, projectType } = stateRef.current;
     if (!finalScript?.length) return;
 
-    const isDoc = isDocPipeline(projectType);
-    const maxSales = isDoc ? 2 : 1;
+    const maxSales = projectType === 'documentary' ? 4 : 1;
 
     // ── Pass 1: Instant structural fixes (no AI) ──────────────────────────────
     const fixed = [...finalScript];
@@ -591,7 +654,7 @@ export function useAgentPipeline({
       const p1 = Math.floor(fixed.length * 0.33);
       fixed[p1] = { ...fixed[p1], blockType: 'SALES' };
       structLog.push(`SALES inserted at block[${p1}]`);
-      if (isDoc) {
+      if (projectType === 'documentary') {
         const p2 = Math.floor(fixed.length * 0.66);
         fixed[p2] = { ...fixed[p2], blockType: 'SALES' };
         structLog.push(`SALES inserted at block[${p2}]`);
@@ -617,7 +680,7 @@ export function useAgentPipeline({
     dispatch({ type: 'SET_FIELD', field: 'finalScript', value: fixed });
 
     // ── Pass 2: AI content fixes (targeted) ───────────────────────────────────
-    const BLACKLIST = ['assassination', 'killing', 'murdered', 'suicide', 'genocide', 'massacre', 'terrorist', 'bomb', 'explosive', 'torture', 'rape', 'shooter', 'sniper', 'liquidation', 'eliminate', 'execution', 'decapitation', 'shooting', 'fatality', 'fatalities', 'slaughter'];
+    const BLACKLIST = DEMONETIZATION_BLACKLIST;
     const blockIssues: Record<number, string[]> = {};
     fixed.forEach((b, i) => {
       const issues: string[] = [];

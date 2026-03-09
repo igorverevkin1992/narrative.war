@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { AGENT_SCOUT_PROMPT, AGENT_LENS_PROMPT, AGENT_RESEARCH_PROMPT, AGENT_ARCHITECT_PROMPT, AGENT_ARCHITECT_DOCUMENTARY_PROMPT, AGENT_ARCHITECT_SHORT_DOC_PROMPT, AGENT_SCRIPTWRITER_PROMPT, AGENT_DOCUMENTARY_WRITER_PROMPT, AGENT_SHORT_DOC_WRITER_PROMPT, AGENT_SEO_PROMPT, AGENT_SCRIPT_REWRITER_PROMPT, AGENT_AUDIT_FIX_PROMPT, AGENT_OUTLINE_PROMPT, AGENT_DOC_OUTLINE_PROMPT, AGENT_SHORT_DOC_OUTLINE_PROMPT, AGENT_DOC_CIRCLE_PROMPT, AGENT_SHORT_DOC_CIRCLE_PROMPT, AGENT_ACT_PLANNING_PROMPT, AGENT_SHORT_DOC_ACT_PLANNING_PROMPT, CHARS_PER_SECOND, MIN_BLOCK_DURATION_SEC, IMAGE_GEN_MODEL, IMAGE_GEN_PROMPT_PREFIX, API_RETRY_COUNT, API_RETRY_BASE_DELAY_MS, AGENT_MODELS } from "../constants";
+import { getModel } from "../appSettings";
 import { ResearchDossier, ScriptBlock, TopicSuggestion, ProjectType, SeoPackage } from "../types";
 import { logger } from "./logger";
 
@@ -275,7 +276,7 @@ const getToolsForModel = (model: string) => {
 };
 
 export const runScoutAgent = async (signal?: AbortSignal): Promise<TopicSuggestion[]> => {
-  const model = AGENT_MODELS.SCOUT;
+  const model = getModel('SCOUT');
   return withRetry(async () => {
     const ai = getClient();
     const tools = getToolsForModel(model);
@@ -315,7 +316,7 @@ export const runScoutAgent = async (signal?: AbortSignal): Promise<TopicSuggesti
 };
 
 export const runRadarAgent = async (topic: string, signal?: AbortSignal): Promise<string> => {
-  const model = AGENT_MODELS.RADAR;
+  const model = getModel('RADAR');
   return withRetry(async () => {
     const ai = getClient();
     const stream = await ai.models.generateContentStream({
@@ -340,7 +341,7 @@ ${AGENT_LENS_PROMPT}`,
 };
 
 export const runAnalystAgent = async (topic: string, radarAnalysis: string, signal?: AbortSignal, scoutHook?: string): Promise<ResearchDossier> => {
-  const model = AGENT_MODELS.ANALYST;
+  const model = getModel('ANALYST');
   return withRetry(async () => {
     const ai = getClient();
 
@@ -401,7 +402,7 @@ ${AGENT_RESEARCH_PROMPT}`,
 };
 
 export const runArchitectAgent = async (dossier: string, projectType: ProjectType = 'youtube', signal?: AbortSignal): Promise<{ structure: string; thumbnailConcept: string; acts?: ArchitectBlock[] }> => {
-  const model = AGENT_MODELS.ARCHITECT;
+  const model = getModel('ARCHITECT');
   const prompt = projectType === 'documentary'
     ? AGENT_ARCHITECT_DOCUMENTARY_PROMPT
     : projectType === 'short_doc'
@@ -460,7 +461,7 @@ export const runOutlineAgent = async (
   actPlanning?: string,
   projectType: ProjectType = 'documentary',
 ): Promise<string> => {
-  const model = AGENT_MODELS.OUTLINER;
+  const model = getModel('OUTLINER');
   return withRetry(async () => {
     const ai = getClient();
     let prompt: string;
@@ -492,17 +493,34 @@ export const runOutlineAgent = async (
 
 export type DocCircleResult = { text: string; acts: ArchitectBlock[] };
 
-// Parse the act structure from Part 3 of the DocCircle plain-text output
+// Parse the act structure from DocCircle output.
+// Primary: reads the ACTS_JSON block appended by the prompt.
+// Fallback: regex heuristic for older outputs, then placeholder.
 function parseDocCircleActs(text: string, projectType: ProjectType = 'documentary'): ArchitectBlock[] {
+  // Primary: find ACTS_JSON: [...] block
+  const jsonMarker = text.indexOf('ACTS_JSON:');
+  if (jsonMarker !== -1) {
+    const jsonStr = text.slice(jsonMarker + 'ACTS_JSON:'.length).trim();
+    try {
+      const parsed = JSON.parse(jsonStr.match(/(\[[\s\S]*?\])/)?.[1] ?? '');
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((a: { block?: string; timecode?: string; description?: string }) => ({
+          block: a.block ?? '',
+          timecode: a.timecode ?? '',
+          description: a.description ?? '',
+        }));
+      }
+    } catch { /* fall through to regex */ }
+  }
+
+  // Fallback: regex for legacy plain-text format
   const acts: ArchitectBlock[] = [];
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    // Match "ACT N — ..." at the start of a line
     const actMatch = line.match(/^ACT\s+(\d+)\s*[—–-]\s*(.+)/);
     if (!actMatch) continue;
     const actNum = actMatch[1];
-    // Title is either on the Timecode line after "Title:" or we fall back to the act label
     const tcLine = (lines[i + 1] ?? '').trim();
     const tcMatch = tcLine.match(/Timecode:\s*([\d:–\-–]+(?:–[\d:]+)?)/);
     const titleMatch = tcLine.match(/Title:\s*(.+)/);
@@ -514,14 +532,15 @@ function parseDocCircleActs(text: string, projectType: ProjectType = 'documentar
       description: summaryMatch?.[1]?.trim() ?? actMatch[2].trim(),
     });
   }
-  // Fallback: if parsing failed, return placeholder acts matching the project type
-  if (acts.length === 0) {
-    const fallbackCount = projectType === 'short_doc' ? 2 : 4;
-    for (let n = 1; n <= fallbackCount; n++) {
-      acts.push({ block: `ACT ${n}`, timecode: '', description: '' });
-    }
-  }
-  return acts;
+  if (acts.length > 0) return acts;
+
+  // Last resort: placeholder acts
+  const fallbackCount = projectType === 'short_doc' ? 2 : 4;
+  return Array.from({ length: fallbackCount }, (_, n) => ({
+    block: `ACT ${n + 1}`,
+    timecode: '',
+    description: '',
+  }));
 }
 
 // --- DOC CIRCLE: Steps 1-4 (drama mandate + conflict arch + global Harmon circle + 4-act division) ---
@@ -531,7 +550,7 @@ export const runDocCircleAgent = async (
   signal?: AbortSignal,
   projectType: ProjectType = 'documentary',
 ): Promise<DocCircleResult> => {
-  const model = AGENT_MODELS.DOC_CIRCLE;
+  const model = getModel('DOC_CIRCLE');
   return withRetry(async () => {
     const ai = getClient();
     const prompt = (projectType === 'short_doc' ? AGENT_SHORT_DOC_CIRCLE_PROMPT : AGENT_DOC_CIRCLE_PROMPT)
@@ -560,7 +579,7 @@ export const runActPlanningAgent = async (
   signal?: AbortSignal,
   projectType: ProjectType = 'documentary',
 ): Promise<string> => {
-  const model = AGENT_MODELS.ACT_PLANNING;
+  const model = getModel('ACT_PLANNING');
   return withRetry(async () => {
     const ai = getClient();
     const actPlanningPrompt = projectType === 'short_doc' ? AGENT_SHORT_DOC_ACT_PLANNING_PROMPT : AGENT_ACT_PLANNING_PROMPT;
@@ -596,7 +615,7 @@ export const runWriterAgent = async (
   onProgress?: (chunks: number) => void,
   outline?: string,
 ): Promise<ScriptBlock[]> => {
-  const model = AGENT_MODELS.WRITER;
+  const model = getModel('WRITER');
   return withRetry(async () => {
     const ai = getClient();
     const dossierStr = dossier;
@@ -681,8 +700,9 @@ export const runDocumentaryActWriter = async (
   signal?: AbortSignal,
   fullOutline?: string,
   projectType: ProjectType = 'documentary',
+  motifContext?: string,
 ): Promise<ScriptBlock[] | null> => {
-  const model = AGENT_MODELS.WRITER;
+  const model = getModel('WRITER');
   const writerPrompt = projectType === 'short_doc' ? AGENT_SHORT_DOC_WRITER_PROMPT : AGENT_DOCUMENTARY_WRITER_PROMPT;
 
   // Fetch style context before the retry loop (avoid redundant RAG calls on retry)
@@ -703,7 +723,11 @@ export const runDocumentaryActWriter = async (
     ? `\n\nFULL 32-BEAT OUTLINE (for narrative coherence — ensure this act's blocks align with the beats assigned to it):\n${fullOutline}`
     : '';
 
-  const contents = `FULL DOCUMENTARY STRUCTURE:\n${structureSummary}\n\nCURRENT ACT TO WRITE: ACT ${actIndex} OF ${allActs.length}\nTITLE: "${act.block}"\nTIMECODE: ${act.timecode}\n${act.description}${prevContext}${outlineContext}\n\nRESEARCH DOSSIER:\n${dossier}\n\n${writerPrompt}\n\n${styleContext ? `=== STYLE REFERENCE: HARRIS/KOZYRA DATA-NOIR ===\n${styleContext}\n================================================` : ''}`;
+  const motifBlock = motifContext
+    ? `\n\nMOTIF CONTINUITY LOG (themes, images, and phrases established in previous acts — reinforce recurring motifs, set up payoffs, or resolve open threads):\n${motifContext}`
+    : '';
+
+  const contents = `FULL DOCUMENTARY STRUCTURE:\n${structureSummary}\n\nCURRENT ACT TO WRITE: ACT ${actIndex} OF ${allActs.length}\nTITLE: "${act.block}"\nTIMECODE: ${act.timecode}\n${act.description}${prevContext}${outlineContext}${motifBlock}\n\nRESEARCH DOSSIER:\n${dossier}\n\n${writerPrompt}\n\n${styleContext ? `=== STYLE REFERENCE: HARRIS/KOZYRA DATA-NOIR ===\n${styleContext}\n================================================` : ''}`;
 
   return withRetry(async () => {
     const ai = getClient();
@@ -765,7 +789,7 @@ export const runScriptRewriterAgent = async (
   signal?: AbortSignal
 ): Promise<ScriptBlock[]> => {
   const ai = getClient();
-  const model = AGENT_MODELS.SCOUT; // Flash: editing task, not generation
+  const model = getModel('SCOUT'); // Flash: editing task, not generation
   const result: ScriptBlock[] = [];
 
   const totalChunks = Math.ceil(script.length / REWRITER_CHUNK_SIZE);
@@ -836,7 +860,7 @@ export const runAuditFixAgent = async (
 
     const fixed = await withRetry(async () => {
       const response = await getClient().models.generateContent({
-        model: AGENT_MODELS.SCOUT,
+        model: getModel('SCOUT'),
         contents: prompt,
         config: { responseMimeType: 'application/json' },
       });
@@ -863,7 +887,7 @@ export const runSEOAgent = async (
   signal?: AbortSignal
 ): Promise<SeoPackage | null> => {
   const ai = getClient();
-  const model = AGENT_MODELS.SCOUT; // Flash is sufficient for SEO generation
+  const model = getModel('SCOUT'); // Flash is sufficient for SEO generation
   const scriptExcerpt = [
     ...script.slice(0, 10),
     ...script.slice(-10),
@@ -917,6 +941,28 @@ export const generatePreviewImage = async (
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error("Preview generation failed", { message });
+    return null;
+  }
+};
+
+// --- INLINE BLOCK TRANSLATOR (EN → RU) ---
+// Flash call to translate a single audioScript block to Russian.
+export const translateBlockToRussian = async (
+  audioScript: string,
+  signal?: AbortSignal
+): Promise<string | null> => {
+  const ai = getClient();
+  const model = getModel('SCOUT'); // Flash is sufficient for translation
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents: `Translate the following English audio script block to Russian. Keep the same tone, voice, and emphasis. Output ONLY the Russian translation, no commentary.\n\n${audioScript}`,
+      config: { abortSignal: signal },
+    });
+    return response.text?.trim() ?? null;
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error("Block translation failed", { message });
     return null;
   }
 };

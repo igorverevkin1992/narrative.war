@@ -50,6 +50,7 @@ export interface ScriptBlock {
   imageUrl?: string;
   assetUrl?: string;
   assetName?: string;
+  ruStale?: boolean; // true when audioScript was edited after russianScript was generated
 }
 
 export type ProjectType = 'youtube' | 'documentary' | 'short_doc';
@@ -100,7 +101,12 @@ export interface SystemState {
   thumbnailConcept?: string; // Extracted from Architect output
   documentaryActs?: Array<{ block: string; timecode: string; description: string }>; // Documentary only
   currentWritingAct?: number; // 0-indexed act being written (documentary multi-pass progress)
+  writerChunks?: number;     // Streaming chunk count for Writer progress bar
   finalScript?: ScriptBlock[];
+
+  // Undo/Redo for script editing (capped at 20 snapshots each)
+  undoStack?: ScriptBlock[][];
+  redoStack?: ScriptBlock[][];
 
   // SEO Package
   seoPackage?: SeoPackage;

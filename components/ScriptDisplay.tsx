@@ -1,9 +1,12 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import JSZip from 'jszip';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 import { ScriptBlock, ProjectType, SeoPackage } from '../types';
-import { APP_VERSION, CHARS_PER_SECOND, PROJECT_CONFIGS } from '../constants';
+import { APP_VERSION, CHARS_PER_SECOND, PROJECT_CONFIGS, DEMONETIZATION_BLACKLIST } from '../constants';
 import { Action } from '../store/reducer';
+import { calculateDurationAndRetiming, translateBlockToRussian } from '../services/geminiService';
+import { getSettings } from '../appSettings';
 
 const PAGE_SIZE = 20;
 
@@ -14,9 +17,27 @@ interface ScriptDisplayProps {
   radarContent?: string;
   analystContent?: string;
   architectContent?: string;
+  thumbnailConcept?: string;
   seo?: SeoPackage;
   onGenerateImage?: (index: number) => void;
   dispatch?: React.Dispatch<Action>;
+  undoStack?: ScriptBlock[][];
+  redoStack?: ScriptBlock[][];
+}
+
+// Highlight all occurrences of query in text (case-insensitive)
+function highlightText(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+  const q = query.toLowerCase().trim();
+  const idx = text.toLowerCase().indexOf(q);
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-yellow-400/30 text-yellow-200 rounded-sm px-0.5">{text.slice(idx, idx + q.length)}</mark>
+      {highlightText(text.slice(idx + q.length), query)}
+    </>
+  );
 }
 
 // HTML-escape to prevent XSS in exported documents
@@ -35,12 +56,17 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   radarContent,
   analystContent,
   architectContent,
+  thumbnailConcept,
   seo,
   onGenerateImage,
   dispatch,
+  undoStack,
+  redoStack,
 }) => {
   const MIN_AUDIO_CHARS = PROJECT_CONFIGS[projectType].minChars;
+  const showRu = getSettings().showRussianScript;
   const [loadingImages, setLoadingImages] = useState<number[]>([]);
+  const [translatingBlocks, setTranslatingBlocks] = useState<number[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const tableRef = useRef<HTMLDivElement>(null);
@@ -48,6 +74,20 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   useEffect(() => {
     tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [page]);
+
+  // Ctrl+Z / Ctrl+Y keyboard shortcuts for undo/redo
+  useEffect(() => {
+    if (!dispatch) return;
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return; // don't intercept while editing
+      if (e.ctrlKey && !e.shiftKey && e.key === 'z') { e.preventDefault(); dispatch({ type: 'UNDO_SCRIPT' }); }
+      if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); dispatch({ type: 'REDO_SCRIPT' }); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [dispatch]);
+
   const [exportError, setExportError] = useState<string | null>(null);
   const [generatingAll, setGeneratingAll] = useState(false);
   const [chaptersCopied, setChaptersCopied] = useState(false);
@@ -58,6 +98,8 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
   const [showAudit, setShowAudit] = useState(false);
   // Group B: Translation Check
   const [showTranslationIssues, setShowTranslationIssues] = useState(false);
+  // Group B: Asset Library
+  const [showAssetLibrary, setShowAssetLibrary] = useState(false);
   // Group C: TTS
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const [ttsBlock, setTtsBlock] = useState<number>(0);
@@ -94,6 +136,30 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
     return { totalAudioChars: total, estMinutes: (total / (CHARS_PER_SECOND * 60)).toFixed(1) };
   }, [script]);
 
+  // Pre-compute audit warning count for Audit button badge
+  const auditWarningCount = useMemo(() => {
+    const allText = script.map(b => b.audioScript || '').join(' ').toLowerCase();
+    let count = 0;
+    if (DEMONETIZATION_BLACKLIST.some(w => allText.includes(w))) count++;
+    if (script.filter(b => (b.audioScript || '').split(/\s+/).filter(Boolean).length < 30).length) count++;
+    if (script[0]?.blockType !== 'HOOK') count++;
+    if (script[script.length - 1]?.blockType !== 'OUTRO') count++;
+    const maxSalesAudit = projectType === 'documentary' ? 4 : 1;
+    const salesCount = script.filter(b => b.blockType === 'SALES').length;
+    if (salesCount === 0 || salesCount > maxSalesAudit) count++;
+    let maxRun = 0, curRun = 1;
+    for (let i = 1; i < script.length; i++) {
+      if (script[i].blockType === script[i-1].blockType) { curRun++; maxRun = Math.max(maxRun, curRun); } else { curRun = 1; }
+    }
+    if (maxRun > 4) count++;
+    const estMin = parseFloat(estMinutes);
+    const cfg = PROJECT_CONFIGS[projectType];
+    const minDur = cfg.minChars / (CHARS_PER_SECOND * 60);
+    const maxDur = projectType === 'documentary' ? 9999 : 20;
+    if (estMin < minDur || estMin > maxDur) count++;
+    return count;
+  }, [script, projectType, estMinutes]);
+
   const handleGenImage = async (index: number) => {
     if (!onGenerateImage) return;
     setLoadingImages(prev => [...prev, index]);
@@ -115,141 +181,70 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
     setGeneratingAll(false);
   };
 
-  const getDocStyles = () => `
-    <style>
-        @page Section1 {
-            size: 841.9pt 595.3pt;
-            mso-page-orientation: landscape;
-            margin: 2.0cm;
-        }
-        div.Section1 {
-            page: Section1;
-        }
-
-        body { font-family: 'Courier New', Courier, monospace; color: #000; }
-
-        h1 { font-size: 24pt; font-weight: bold; text-transform: uppercase; color: #b91c1c; border-bottom: 2px solid #b91c1c; padding-bottom: 10px; }
-        h2 { font-size: 16pt; font-weight: bold; background-color: #eee; padding: 5px; margin-top: 30px; border-left: 5px solid #b91c1c; }
-        h3 { font-size: 12pt; font-weight: bold; color: #444; margin-top: 15px; }
-        p { font-size: 11pt; line-height: 1.4; margin-bottom: 10px; }
-
-        .raw-content { white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 10pt; background: #f9f9f9; padding: 10px; border: 1px solid #ddd; }
-
-        .block {
-            margin-bottom: 20px;
-            border-bottom: 1px solid #ccc;
-            padding-bottom: 10px;
-            page-break-inside: avoid;
-        }
-        .time { font-weight: bold; color: #cc0000; font-size: 14pt; }
-        .visual { color: #000099; font-style: italic; margin: 5px 0; font-size: 11pt; }
-        .audio { margin-top: 5px; font-weight: bold; font-size: 12pt; }
-        .russian { margin-top: 2px; color: #555; font-size: 11pt; }
-
-        .img-container {
-            margin-top: 15px;
-            margin-bottom: 15px;
-            text-align: left;
-        }
-        img.storyboard {
-            width: 600px;
-            height: auto;
-            aspect-ratio: 16/9;
-            border: 1px solid #666;
-            display: block;
-        }
-
-        .page-break { page-break-before: always; }
-      </style>
-  `;
-
-  const downloadDoc = (filename: string, content: string) => {
-    const blob = new Blob(['\ufeff', content], { type: 'application/msword' });
+  const saveBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
-
-    const fileDownload = document.createElement("a");
-    document.body.appendChild(fileDownload);
-    fileDownload.href = url;
-    fileDownload.download = filename;
-    fileDownload.click();
-    document.body.removeChild(fileDownload);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  const safeTopic = escapeHtml(topic);
   const safeFilename = topic.replace(/[^a-z0-9]/gi, '_').substring(0, 30);
 
-  const handleExportDossierOnly = () => {
+  const handleExportDossierOnly = async () => {
     try {
       setExportError(null);
-      const header = `
-        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-        <head><meta charset='utf-8'><title>NARRATIVE.WAR DOSSIER</title>
-        ${getDocStyles()}
-        </head><body>
-        <div class="Section1">
-
-        <h1>INTELLIGENCE DOSSIER: ${safeTopic}</h1>
-        <p><strong>NARRATIVE.WAR V${APP_VERSION} // RESEARCH DATA ONLY</strong></p>
-        <p>Generated: ${escapeHtml(new Date().toLocaleString())}</p>
-        <hr/>
-
-        <h2>AGENT A: RADAR INTERCEPT</h2>
-        <div class="raw-content">${escapeHtml(radarContent || 'No Radar Data Available')}</div>
-
-        <div class="page-break"></div>
-
-        <h2>AGENT B: INTELLIGENCE DOSSIER</h2>
-        <div class="raw-content">${escapeHtml(analystContent || 'No Analyst Data Available')}</div>
-
-        <div class="page-break"></div>
-
-        <h2>AGENT C: STRUCTURE BLUEPRINT</h2>
-        <div class="raw-content">${escapeHtml(architectContent || 'No Architect Data Available')}</div>
-
-        </div></body></html>
-      `;
-      downloadDoc(`DOSSIER_${safeFilename}.doc`, header);
+      const sections = [
+        { title: 'AGENT A: RADAR INTERCEPT', content: radarContent || 'No Radar Data Available' },
+        { title: 'AGENT B: INTELLIGENCE DOSSIER', content: typeof analystContent === 'string' ? analystContent : JSON.stringify(analystContent, null, 2) || 'No Analyst Data Available' },
+        { title: 'AGENT C: STRUCTURE BLUEPRINT', content: architectContent || 'No Architect Data Available' },
+      ];
+      const children: Paragraph[] = [
+        new Paragraph({ text: `INTELLIGENCE DOSSIER: ${topic}`, heading: HeadingLevel.HEADING_1 }),
+        new Paragraph({ children: [new TextRun({ text: `NARRATIVE.WAR V${APP_VERSION} // RESEARCH DATA ONLY`, bold: true })] }),
+        new Paragraph({ text: `Generated: ${new Date().toLocaleString()}` }),
+        new Paragraph({ text: '' }),
+      ];
+      for (const sec of sections) {
+        children.push(new Paragraph({ text: sec.title, heading: HeadingLevel.HEADING_2 }));
+        for (const line of sec.content.split('\n')) {
+          children.push(new Paragraph({ text: line }));
+        }
+        children.push(new Paragraph({ text: '' }));
+      }
+      const doc = new Document({ sections: [{ children }] });
+      const blob = await Packer.toBlob(doc);
+      saveBlob(blob, `DOSSIER_${safeFilename}.docx`);
     } catch (e) {
       setExportError(`Dossier export failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     }
   };
 
-  const handleExportScriptOnly = () => {
+  const handleExportScriptOnly = async () => {
     try {
       setExportError(null);
-      const header = `
-        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-        <head><meta charset='utf-8'><title>NARRATIVE.WAR SCRIPT</title>
-        ${getDocStyles()}
-        </head><body>
-        <div class="Section1">
-
-        <h1>SCRIPT: ${safeTopic}</h1>
-        <p><strong>NARRATIVE.WAR V${APP_VERSION} // PRODUCTION SCRIPT</strong></p>
-        <p>Generated: ${escapeHtml(new Date().toLocaleString())}</p>
-        <hr/>
-
-        <h2>AGENT D: FINAL SCRIPT</h2>
-      `;
-
-      const scriptBody = script.map(block => `
-        <div class="block">
-          <div class="time">${escapeHtml(block.timecode)} [${escapeHtml(block.blockType)}]</div>
-          <div class="visual">VISUAL: ${escapeHtml(block.visualCue)}</div>
-
-          ${block.imageUrl ? `
-            <div class="img-container">
-              <img class="storyboard" src="${escapeHtml(block.imageUrl)}" alt="Storyboard Frame" style="width: 600px; height: auto;" />
-            </div>
-          ` : ''}
-
-          <div class="audio">AUDIO (EN): ${escapeHtml(block.audioScript)}</div>
-          <div class="russian">AUDIO (RU): ${escapeHtml(block.russianScript)}</div>
-        </div>
-      `).join('');
-
-      downloadDoc(`SCRIPT_${safeFilename}.doc`, header + scriptBody + '</div></body></html>');
+      const children: Paragraph[] = [
+        new Paragraph({ text: `SCRIPT: ${topic}`, heading: HeadingLevel.HEADING_1 }),
+        new Paragraph({ children: [new TextRun({ text: `NARRATIVE.WAR V${APP_VERSION} // PRODUCTION SCRIPT`, bold: true })] }),
+        new Paragraph({ text: `Generated: ${new Date().toLocaleString()}` }),
+        new Paragraph({ text: '' }),
+        new Paragraph({ text: 'FINAL SCRIPT', heading: HeadingLevel.HEADING_2 }),
+      ];
+      for (const block of script) {
+        children.push(
+          new Paragraph({ children: [new TextRun({ text: `${block.timecode}  [${block.blockType}]`, bold: true, color: 'CC0000' })] }),
+          new Paragraph({ children: [new TextRun({ text: `VISUAL: ${block.visualCue}`, italics: true, color: '000099' })] }),
+          new Paragraph({ children: [new TextRun({ text: `AUDIO (EN): ${block.audioScript}`, bold: true })] }),
+          new Paragraph({ text: `AUDIO (RU): ${block.russianScript || ''}` }),
+          new Paragraph({ text: '──────────────────────────────────────────────' }),
+        );
+      }
+      const doc = new Document({ sections: [{ children }] });
+      const blob = await Packer.toBlob(doc);
+      saveBlob(blob, `SCRIPT_${safeFilename}.docx`);
     } catch (e) {
       setExportError(`Script export failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     }
@@ -324,7 +319,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
     }
   };
 
-  const handleExportShotList = () => {
+  const handleExportShotList = async () => {
     try {
       setExportError(null);
       const SHOT_CATEGORIES = ['ВЕДУЩИЙ', 'АРХИВНЫЕ КАДРЫ', 'B-ROLL', 'ДОКУМЕНТ', 'АНИМАЦИЯ ДАННЫХ', 'ИНТЕРВЬЮ', 'ХРОНИКА', 'ТИТР'];
@@ -338,25 +333,27 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
         groups[cat].push({ timecode: block.timecode, blockType: block.blockType, visual: block.visualCue });
       });
 
-      const docStyles = getDocStyles();
-      let body = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><meta charset='utf-8'><title>SHOT LIST</title>${docStyles}</head><body><div class="Section1">
-      <h1>SHOT LIST / B-ROLL BRIEF: ${safeTopic}</h1>
-      <p><strong>NARRATIVE.WAR V${APP_VERSION} // PRODUCTION BRIEF</strong></p>
-      <p>Generated: ${escapeHtml(new Date().toLocaleString())}</p><hr/>`;
-
+      const children: Paragraph[] = [
+        new Paragraph({ text: `SHOT LIST / B-ROLL BRIEF: ${topic}`, heading: HeadingLevel.HEADING_1 }),
+        new Paragraph({ children: [new TextRun({ text: `NARRATIVE.WAR V${APP_VERSION} // PRODUCTION BRIEF`, bold: true })] }),
+        new Paragraph({ text: `Generated: ${new Date().toLocaleString()}` }),
+        new Paragraph({ text: '' }),
+      ];
       for (const cat of [...SHOT_CATEGORIES, 'OTHER']) {
         const items = groups[cat];
         if (!items.length) continue;
-        body += `<h2>[${escapeHtml(cat)}] — ${items.length} shots</h2>`;
-        body += items.map(item =>
-          `<div class="block"><div class="time">${escapeHtml(item.timecode)}</div>
-          <div style="font-size:10pt;color:#666;">[${escapeHtml(item.blockType)}]</div>
-          <div class="visual">${escapeHtml(item.visual)}</div></div>`
-        ).join('');
+        children.push(new Paragraph({ text: `[${cat}] — ${items.length} shots`, heading: HeadingLevel.HEADING_2 }));
+        for (const item of items) {
+          children.push(
+            new Paragraph({ children: [new TextRun({ text: `${item.timecode}  [${item.blockType}]`, bold: true, color: 'CC0000' })] }),
+            new Paragraph({ children: [new TextRun({ text: item.visual, italics: true })] }),
+            new Paragraph({ text: '' }),
+          );
+        }
       }
-      body += '</div></body></html>';
-      downloadDoc(`SHOTLIST_${safeFilename}.doc`, body);
+      const doc = new Document({ sections: [{ children }] });
+      const blob = await Packer.toBlob(doc);
+      saveBlob(blob, `SHOTLIST_${safeFilename}.docx`);
     } catch (e) {
       setExportError(`Shot list export failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     }
@@ -507,6 +504,26 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
       const zip = new JSZip();
       const fn = safeFilename;
 
+      // script.docx
+      const scriptDocChildren: Paragraph[] = [
+        new Paragraph({ text: `SCRIPT: ${topic}`, heading: HeadingLevel.HEADING_1 }),
+        new Paragraph({ children: [new TextRun({ text: `NARRATIVE.WAR V${APP_VERSION} // PRODUCTION SCRIPT`, bold: true })] }),
+        new Paragraph({ text: `Generated: ${new Date().toLocaleString()}` }),
+        new Paragraph({ text: '' }),
+        new Paragraph({ text: 'FINAL SCRIPT', heading: HeadingLevel.HEADING_2 }),
+      ];
+      for (const block of script) {
+        scriptDocChildren.push(
+          new Paragraph({ children: [new TextRun({ text: `${block.timecode}  [${block.blockType}]`, bold: true, color: 'CC0000' })] }),
+          new Paragraph({ children: [new TextRun({ text: `VISUAL: ${block.visualCue}`, italics: true, color: '000099' })] }),
+          new Paragraph({ children: [new TextRun({ text: `AUDIO (EN): ${block.audioScript}`, bold: true })] }),
+          new Paragraph({ text: `AUDIO (RU): ${block.russianScript || ''}` }),
+          new Paragraph({ text: '──────────────────────────────────────────────' }),
+        );
+      }
+      const scriptDoc = new Document({ sections: [{ children: scriptDocChildren }] });
+      zip.file(`SCRIPT_${fn}.docx`, await Packer.toBlob(scriptDoc));
+
       // script.json
       zip.file(`SCRIPT_${fn}.json`, JSON.stringify(script, null, 2));
 
@@ -532,7 +549,37 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
       if (radarContent) zip.file(`RADAR_${fn}.txt`, radarContent);
       if (analystContent) zip.file(`DOSSIER_${fn}.txt`, typeof analystContent === 'string' ? analystContent : JSON.stringify(analystContent, null, 2));
       if (architectContent) zip.file(`BLUEPRINT_${fn}.txt`, architectContent);
-      if (seo) zip.file(`SEO_${fn}.json`, JSON.stringify(seo, null, 2));
+      if (thumbnailConcept) zip.file(`THUMBNAIL_CONCEPT_${fn}.txt`, thumbnailConcept);
+      if (seo) {
+        zip.file(`SEO_${fn}.json`, JSON.stringify(seo, null, 2));
+        const seoTxt = [
+          '═══════════════════════════════════════',
+          'TITLE OPTIONS',
+          '═══════════════════════════════════════',
+          ...seo.titles.map((t, i) => `${i + 1}. ${t}`),
+          '',
+          '═══════════════════════════════════════',
+          'DESCRIPTION',
+          '═══════════════════════════════════════',
+          seo.description,
+          '',
+          '═══════════════════════════════════════',
+          'TAGS',
+          '═══════════════════════════════════════',
+          seo.tags,
+          '',
+          '═══════════════════════════════════════',
+          'PINNED COMMENT',
+          '═══════════════════════════════════════',
+          seo.firstComment,
+          '',
+          '═══════════════════════════════════════',
+          'END SCREEN SCRIPT',
+          '═══════════════════════════════════════',
+          seo.endScreenScript,
+        ].join('\n');
+        zip.file(`SEO_PACKAGE_${fn}.txt`, '\ufeff' + seoTxt);
+      }
 
       const blob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(blob);
@@ -597,6 +644,28 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
               </p>
             </div>
 
+            {/* Undo / Redo */}
+            {dispatch && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => dispatch({ type: 'UNDO_SCRIPT' })}
+                  disabled={!undoStack?.length}
+                  title="Undo (Ctrl+Z)"
+                  className="px-2 py-1.5 text-[10px] font-mono uppercase rounded border border-mw-slate/30 text-mw-slate hover:border-white hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  ↺ Undo{undoStack?.length ? ` (${undoStack.length})` : ''}
+                </button>
+                <button
+                  onClick={() => dispatch({ type: 'REDO_SCRIPT' })}
+                  disabled={!redoStack?.length}
+                  title="Redo (Ctrl+Y)"
+                  className="px-2 py-1.5 text-[10px] font-mono uppercase rounded border border-mw-slate/30 text-mw-slate hover:border-white hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  ↻ Redo{redoStack?.length ? ` (${redoStack.length})` : ''}
+                </button>
+              </div>
+            )}
+
             {/* Generate All Images */}
             {onGenerateImage && (
               <button
@@ -618,13 +687,13 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
               onClick={handleExportDossierOnly}
               className="flex items-center gap-2 px-4 py-2 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/30 text-blue-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
             >
-              Dossier Only (.doc)
+              Dossier Only (.docx)
             </button>
             <button
               onClick={handleExportScriptOnly}
               className="flex items-center gap-2 px-4 py-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
             >
-              Script Only (.doc)
+              Script Only (.docx)
             </button>
             <button
               onClick={handleExportExcel}
@@ -648,7 +717,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
               onClick={handleExportShotList}
               className="flex items-center gap-2 px-4 py-2 bg-cyan-900/40 hover:bg-cyan-800/60 border border-cyan-500/30 text-cyan-200 rounded text-xs uppercase font-bold tracking-wider transition-colors"
             >
-              Shot List (.doc)
+              Shot List (.docx)
             </button>
             <button
               onClick={handleCopyChapters}
@@ -692,6 +761,18 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
             >
               ⬇ Download All (.zip)
             </button>
+            {dispatch && (
+              <button
+                onClick={() => {
+                  const retimed = calculateDurationAndRetiming(script);
+                  dispatch({ type: 'MERGE', partial: { finalScript: retimed } });
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800/60 hover:bg-slate-700/60 border border-slate-500/30 text-slate-300 rounded text-xs uppercase font-bold tracking-wider transition-colors"
+                title="Recalculate all timecodes from audioScript lengths"
+              >
+                ⏱ Recalc Timecodes
+              </button>
+            )}
           </div>
 
           {/* Export error */}
@@ -730,10 +811,27 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
             </button>
             <button
               onClick={() => setShowAudit(v => !v)}
-              className={`px-3 py-1 text-[10px] font-mono uppercase rounded border transition-all ${showAudit ? 'border-mw-red text-mw-red bg-mw-red/10' : 'border-mw-slate/30 text-mw-slate hover:border-mw-red/60'}`}
+              className={`flex items-center gap-1.5 px-3 py-1 text-[10px] font-mono uppercase rounded border transition-all ${showAudit ? 'border-mw-red text-mw-red bg-mw-red/10' : 'border-mw-slate/30 text-mw-slate hover:border-mw-red/60'}`}
             >
               Audit
+              {auditWarningCount > 0 && (
+                <span className="px-1.5 py-0.5 bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 rounded text-[9px] font-bold leading-none">
+                  {auditWarningCount}
+                </span>
+              )}
             </button>
+            {(() => {
+              const assetCount = script.filter(b => b.assetName).length;
+              return assetCount > 0 ? (
+                <button
+                  onClick={() => setShowAssetLibrary(v => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-1 text-[10px] font-mono uppercase rounded border transition-all ${showAssetLibrary ? 'border-orange-400 text-orange-300 bg-orange-900/20' : 'border-mw-slate/30 text-mw-slate hover:border-orange-400/60'}`}
+                >
+                  Assets
+                  <span className="px-1.5 py-0.5 bg-orange-500/20 border border-orange-500/50 text-orange-300 rounded text-[9px] font-bold leading-none">{assetCount}</span>
+                </button>
+              ) : null;
+            })()}
           </div>
 
           {/* TTS Controls */}
@@ -783,7 +881,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
 
           {/* Audit Panel */}
           {showAudit && (() => {
-            const BLACKLIST = ['assassination', 'killing', 'murdered', 'suicide', 'genocide', 'massacre', 'terrorist', 'bomb', 'explosive', 'torture', 'rape', 'shooter', 'sniper', 'liquidation', 'eliminate', 'execution', 'decapitation', 'shooting', 'fatality', 'fatalities', 'slaughter'];
+            const BLACKLIST = DEMONETIZATION_BLACKLIST;
             const auditIssues: { type: 'warn' | 'ok'; msg: string }[] = [];
             const allText = script.map(b => (b.audioScript || '')).join(' ').toLowerCase();
             const foundBlacklist = BLACKLIST.filter(w => allText.includes(w));
@@ -802,19 +900,63 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
             }
             if (maxRun > 4) auditIssues.push({ type: 'warn', msg: `${maxRun} consecutive identical block types` });
             const estMin = parseFloat(estMinutes);
-            const [minDur, maxDur, durLabel] = projectType === 'documentary' ? [55, 9999, '55+ min'] : [8, 20, '8–20 min'];
+            const cfg = PROJECT_CONFIGS[projectType];
+            const minDur = cfg.minChars / (CHARS_PER_SECOND * 60);
+            const maxDur = projectType === 'documentary' ? 9999 : 20;
             if (estMin >= minDur && estMin <= maxDur) auditIssues.push({ type: 'ok', msg: `Duration ${estMinutes} min — OK` });
-            else auditIssues.push({ type: 'warn', msg: `Duration ${estMinutes} min — out of ${durLabel} target` });
+            else auditIssues.push({ type: 'warn', msg: `Duration ${estMinutes} min — out of ${cfg.description} target` });
             auditIssues.push({ type: 'ok', msg: `${script.length} total blocks` });
             if (!foundBlacklist.length) auditIssues.push({ type: 'ok', msg: 'No blacklisted words' });
+            const warnCount = auditIssues.filter(i => i.type === 'warn').length;
             return (
               <div className="bg-black/30 border border-mw-slate/20 rounded p-3 flex flex-col gap-1">
-                <div className="text-[10px] font-bold text-mw-slate uppercase tracking-wider mb-1">Script Audit</div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-[10px] font-bold text-mw-slate uppercase tracking-wider">Script Audit</div>
+                  {warnCount > 0
+                    ? <span className="text-[10px] font-bold text-yellow-300 font-mono">{warnCount} violation{warnCount !== 1 ? 's' : ''} found</span>
+                    : <span className="text-[10px] font-bold text-green-400 font-mono">All checks passed</span>
+                  }
+                </div>
                 {auditIssues.map((issue, i) => (
                   <div key={i} className={`text-xs font-mono ${issue.type === 'warn' ? 'text-yellow-300' : 'text-green-400'}`}>
                     {issue.type === 'warn' ? '⚠' : '✓'} {issue.msg}
                   </div>
                 ))}
+              </div>
+            );
+          })()}
+
+          {/* Asset Library */}
+          {showAssetLibrary && (() => {
+            const assetsBlocks = script.map((b, i) => ({ block: b, idx: i })).filter(({ block }) => block.assetName);
+            return (
+              <div className="bg-black/30 border border-orange-500/20 rounded p-3">
+                <div className="text-[10px] font-bold text-orange-300/70 uppercase tracking-wider mb-3">
+                  Asset Library — {assetsBlocks.length} attached
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {assetsBlocks.map(({ block, idx }) => (
+                    <div key={idx} className="flex flex-col gap-1 border border-mw-slate/20 rounded p-2 bg-black/20 w-36">
+                      {block.assetUrl && block.assetName?.match(/\.(png|jpg|jpeg|gif|webp)$/i) ? (
+                        <img src={block.assetUrl} alt={block.assetName} className="w-full h-20 object-cover rounded border border-mw-slate/20" />
+                      ) : (
+                        <div className="w-full h-20 flex items-center justify-center bg-mw-slate/10 rounded border border-mw-slate/20">
+                          <span className="text-2xl">📎</span>
+                        </div>
+                      )}
+                      <span className="text-[10px] text-mw-slate font-mono truncate" title={block.assetName}>{block.assetName}</span>
+                      <span className="text-[10px] text-mw-slate/50 font-mono">Block #{idx + 1} — {block.blockType}</span>
+                      {dispatch && (
+                        <button
+                          onClick={() => dispatch({ type: 'UPDATE_SCRIPT_BLOCK', index: idx, patch: { assetUrl: undefined, assetName: undefined } })}
+                          className="text-[10px] text-red-400/70 hover:text-red-300 text-left transition-all"
+                        >
+                          ✕ Detach
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })()}
@@ -861,7 +1003,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
                 <th className="p-4 w-28">Timing</th>
                 <th className="p-4 w-1/4">Visual (AI Storyboard)</th>
                 <th className="p-4 w-2/3">Audio (EN)</th>
-                {/* <th className="p-4 w-1/3">Audio (RU)</th> */}
+                {showRu && <th className="p-4 w-1/3">Audio (RU)</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-mw-slate/20 font-mono text-sm">
@@ -887,7 +1029,7 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
                       )}
                     </td>
                     <td className="p-4 align-top text-blue-200/90 text-xs">
-                      <div className="mb-2 italic">{block.visualCue}</div>
+                      <div className="mb-2 italic">{highlightText(block.visualCue, searchQuery)}</div>
                       <div className="flex gap-1 mb-2">
                         {(() => {
                           const query = encodeURIComponent(
@@ -959,7 +1101,14 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
                             className="w-full bg-black/60 border border-mw-red/50 rounded p-2 text-xs font-mono text-gray-200 resize-y min-h-[80px] focus:outline-none"
                           />
                           <div className="flex gap-1">
-                            <button onClick={() => { dispatch({ type: 'UPDATE_SCRIPT_BLOCK', index: globalIdx, patch: { audioScript: editValue } }); setEditingCell(null); }} className="text-[10px] px-2 py-0.5 rounded bg-mw-red/20 border border-mw-red/40 text-white hover:bg-mw-red/40 transition-all">Save</button>
+                            <button onClick={() => {
+                              const changed = editValue !== block.audioScript;
+                              dispatch({ type: 'UPDATE_SCRIPT_BLOCK', index: globalIdx, patch: {
+                                audioScript: editValue,
+                                ...(changed && block.russianScript ? { ruStale: true } : {}),
+                              }});
+                              setEditingCell(null);
+                            }} className="text-[10px] px-2 py-0.5 rounded bg-mw-red/20 border border-mw-red/40 text-white hover:bg-mw-red/40 transition-all">Save</button>
                             <button onClick={() => setEditingCell(null)} className="text-[10px] px-2 py-0.5 rounded border border-mw-slate/30 text-mw-slate hover:text-white transition-all">Cancel</button>
                           </div>
                         </div>
@@ -968,8 +1117,28 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
                           className={`italic cursor-pointer group relative ${dispatch ? 'hover:bg-white/5 rounded px-1' : ''}`}
                           onClick={() => dispatch && (setEditingCell({ idx: globalIdx, field: 'audioScript' }), setEditValue(block.audioScript))}
                         >
-                          "{block.audioScript}"
+                          "{highlightText(block.audioScript, searchQuery)}"
                           {dispatch && <span className="absolute top-0 right-0 text-[9px] text-mw-slate/50 opacity-0 group-hover:opacity-100">edit</span>}
+                        </div>
+                      )}
+                      {/* Stale RU indicator + translate button */}
+                      {dispatch && block.ruStale && block.russianScript && (
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <span className="text-[10px] text-yellow-400 font-mono">⚠ RU outdated</span>
+                          <button
+                            disabled={translatingBlocks.includes(globalIdx)}
+                            onClick={async () => {
+                              setTranslatingBlocks(prev => [...prev, globalIdx]);
+                              const ru = await translateBlockToRussian(block.audioScript);
+                              if (ru) {
+                                dispatch({ type: 'UPDATE_SCRIPT_BLOCK', index: globalIdx, patch: { russianScript: ru, ruStale: false } });
+                              }
+                              setTranslatingBlocks(prev => prev.filter(i => i !== globalIdx));
+                            }}
+                            className="text-[10px] px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-300 hover:bg-yellow-900/20 transition-all disabled:opacity-40"
+                          >
+                            {translatingBlocks.includes(globalIdx) ? '…translating' : '↻ Translate RU'}
+                          </button>
                         </div>
                       )}
                       {/* Asset attachment */}
@@ -998,16 +1167,16 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
                         </div>
                       )}
                     </td>
-                    {/* Russian script column hidden — re-enable when needed
-                    <td className="p-4 align-top text-gray-400 leading-relaxed italic border-l border-mw-slate/10">
-                      "{block.russianScript}"
-                      {hasTranslationIssue && (
-                        <span className="ml-2 text-yellow-400 text-[10px] font-bold not-italic">
-                          ⚠ {Math.round(translationRatio * 100)}%
-                        </span>
-                      )}
-                    </td>
-                    */}
+                    {showRu && (
+                      <td className="p-4 align-top text-gray-400 leading-relaxed italic border-l border-mw-slate/10">
+                        "{block.russianScript}"
+                        {hasTranslationIssue && (
+                          <span className="ml-2 text-yellow-400 text-[10px] font-bold not-italic">
+                            ⚠ {Math.round(translationRatio * 100)}%
+                          </span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
