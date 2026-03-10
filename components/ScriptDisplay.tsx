@@ -285,10 +285,10 @@ const ScriptDisplay: React.FC<ScriptDisplayProps> = ({
     const parts = tc.split(/\s*[-–]\s*/);
     const toSrt = (t: string): string => {
       const segs = t.trim().split(':').map(Number);
-      let h = 0, m = 0, s = 0;
-      if (segs.length === 3) { [h, m, s] = segs; }
-      else if (segs.length === 2) { [m, s] = segs; }
-      else { s = segs[0]; }
+      let h = 0, m = 0;
+      const s = segs[segs.length - 1] ?? 0;
+      if (segs.length === 3) { h = segs[0]; m = segs[1]; }
+      else if (segs.length === 2) { m = segs[0]; }
       return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(Math.floor(s)).padStart(2,'0')},000`;
     };
     return { start: toSrt(parts[0] ?? '00:00'), end: toSrt(parts[1] ?? parts[0] ?? '00:00') };

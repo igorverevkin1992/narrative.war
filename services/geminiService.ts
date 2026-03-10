@@ -72,7 +72,7 @@ async function withRetry<T>(fn: () => Promise<T>, label: string, signal?: AbortS
     try {
       return await fn();
     } catch (err) {
-      if (signal?.aborted) throw new Error('Operation cancelled by user.');
+      if (signal?.aborted) throw new Error('Operation cancelled by user.', { cause: err });
       lastError = err;
       const status = getHttpStatus(err);
       // 400 Bad Request: no point retrying — the request itself is malformed.
@@ -111,7 +111,7 @@ function extractResponseText(response: any, label: string): string {
   const finishReason = response.candidates?.[0]?.finishReason;
   logger.error(`${label}: empty text. blockReason=${blockReason} finishReason=${finishReason}`, {
     candidateCount: response.candidates?.length ?? 0,
-    parts: parts?.map((p: any) => Object.keys(p)),
+    parts: parts?.map((p: Record<string, unknown>) => Object.keys(p)),
   });
   return '';
 }
@@ -130,7 +130,7 @@ function safeJsonParse<T>(text: string, label: string): T {
 // Extracts the first JSON object or array from free-form text.
 // Required when googleSearch grounding is active — incompatible with responseMimeType/responseSchema.
 function extractJson<T>(text: string, label: string): T {
-  const match = text.match(/```json\s*([\s\S]*?)```/) || text.match(/([\[{][\s\S]*[\]}])/);
+  const match = text.match(/```json\s*([\s\S]*?)```/) || text.match(/([{[][\s\S]*[}\]])/);
   if (!match) {
     logger.error(`${label}: No JSON block found in grounded response`, { text: text.substring(0, 300) });
     throw new Error(`${label}: No JSON found in response`);

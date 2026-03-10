@@ -62,7 +62,7 @@ const RichTextDisplay: React.FC<RichTextDisplayProps> = memo(({ content, classNa
         // Handle Key-Value (e.g., "Topic: Value")
         const _kvParts = trimmed.split(':');
         const _kvLabel = _kvParts[0];
-        if (trimmed.includes(':') && !trimmed.includes('://') && trimmed.length < 100 && !trimmed.endsWith(':') && !/\d/.test(_kvLabel) && !/[\[\]]/.test(_kvLabel)) {
+        if (trimmed.includes(':') && !trimmed.includes('://') && trimmed.length < 100 && !trimmed.endsWith(':') && !/\d/.test(_kvLabel) && !/[[\]]/.test(_kvLabel)) {
              const parts = _kvParts;
              const label = _kvLabel;
              const val = parts.slice(1).join(':');
